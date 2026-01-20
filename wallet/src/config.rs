@@ -222,10 +222,10 @@ impl Default for WalletConfig {
         let public_key2 = nssa::PublicKey::new_from_private_key(&pub_sign_key2);
         let public_account_id2 = nssa::AccountId::from(&public_key2);
 
-        let key_chain1 = KeyChain::new_mnemonic("default_private_account_1".to_owned());
+        let (key_chain1, _) = KeyChain::new_mnemonic("default_private_account_1");
         let private_account_id1 = nssa::AccountId::from(&key_chain1.nullifier_public_key);
 
-        let key_chain2 = KeyChain::new_mnemonic("default_private_account_2".to_owned());
+        let (key_chain2, _) = KeyChain::new_mnemonic("default_private_account_2");
         let private_account_id2 = nssa::AccountId::from(&key_chain2.nullifier_public_key);
 
         Self {

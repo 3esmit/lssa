@@ -8650,6 +8650,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "base58",
+ "bip39",
  "clap",
  "common",
  "env_logger",

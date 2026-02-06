@@ -2055,10 +2055,13 @@ dependencies = [
 name = "example_program_deployment_programs"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "bytemuck",
  "hex",
  "nssa_core",
  "risc0-zkvm",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -4653,9 +4656,18 @@ dependencies = [
 name = "program_deployment"
 version = "0.1.0"
 dependencies = [
+ "borsh",
+ "bytemuck",
  "clap 4.5.53",
+ "example_program_deployment_methods",
+ "hex",
  "nssa",
  "nssa_core",
+ "rand 0.8.5",
+ "risc0-binfmt",
+ "risc0-zkvm",
+ "serde",
+ "sha2",
  "tokio",
  "wallet",
 ]

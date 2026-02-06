@@ -10,3 +10,12 @@ wallet.workspace = true
 
 tokio = { workspace = true, features = ["macros"] }
 clap.workspace = true
+serde.workspace = true
+risc0-zkvm.workspace = true
+bytemuck.workspace = true
+rand.workspace = true
+hex.workspace = true
+borsh.workspace = true
+risc0-binfmt = "3.0.2"
+example_program_deployment_methods = { path = "methods" }
+sha2.workspace = true

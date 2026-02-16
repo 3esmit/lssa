@@ -1,40 +1,89 @@
-# Design Decisions
+# Paywall Design Decisions
 
-## Threat Model & Privacy Goals
-- **Attacker**: A public observer analyzing the blockchain.
-- **Goal**: Prevent the attacker from linking a specific Depositor to a specific Recipient.
-- **Leaks (MVP Accepted)**:
-  - **Amounts**: Since amounts are visible, unique amounts (e.g., 10.53) allow linking. Users should use standard denominations (e.g., 10, 100) to maximize anonymity set.
-  - **Timing**: Immediate withdrawal after deposit might correlate events.
-  - **Graph**: We hide the edge, but nodes (Sender, Recipient) are visible.
+## 1. Standalone Workspace Scope
 
-## Architecture Decisions
+Decision:
+- Keep implementation self-contained under `paywall/`.
 
-### 1. Single Pool Account vs. UTXO
-- **Decision**: Use a single `PaywallPool` account storing a list of commitments and nullifiers.
-- **Reasoning**: Simplifies state management for the MVP. A UTXO model (one account per note) would require creating new accounts for every deposit, which is more complex to manage and "scan" without a built-in discovery mechanism.
-- **Trade-off**: The `commitments` and `nullifiers` lists will grow indefinitely, increasing state size and cost. For a production system, a Merkle Tree (membership proof) would be required to keep state constant size. This is deferred to "Iteration 2".
+Why:
+- Allows independent iteration/testing without changing root workspace membership.
 
-### 2. Combined Deposit & Allocate
-- **Decision**: `DepositAndAllocate` is a single atomic instruction.
-- **Reasoning**: "Depositors can privately allocate portions of their deposits". While separate `Deposit` and `Allocate` steps are flexible, combining them reduces the number of transactions and account lookups. It ensures that every commitment is backed by real funds immediately.
+## 2. Global Shared Pool (Not Per-Artist)
 
-### 3. Nullifier Registry
-- **Decision**: Store `nullifiers` in a `Vec<[u8; 32]>` inside the `PaywallPool` account data.
-- **Reasoning**: Meets the requirement "Maintain a program-owned nullifier registry". It's the simplest "closest equivalent" to a registry without complex data structures.
-- **Replay Protection**: The program checks `!nullifiers.contains(&new_nullifier)` before appending.
+Decision:
+- Use one global pool account configured in paywall state.
 
-### 4. Private Withdrawal Execution
-- **Decision**: `Withdraw` is a Private Transaction.
-- **Reasoning**: This is critical. If `Withdraw` were public, the `secret` (or the logic connecting commitment to nullifier) would be visible in the instruction data. By using ZK, we prove validity without revealing the secret.
-- **Public Outputs**: The transaction produces a public update to the `PaywallPool` (adding the nullifier). This reveals *that* a withdrawal happened, but not *which* commitment was spent.
+Why:
+- Larger anonymity set: deposits from many endpoints share the same liquidity surface.
 
-## Assumptions
-- **Hashing**: We assume `nssa_core` provides a secure hash function (e.g., SHA-256 or Poseidon) accessible to the guest. We will use `sha2` crate if available, or `nssa` primitives.
-- **Serialization**: We use `serde` + `bincode` (or `borsh`) as per repo patterns.
-- **Token Transfer**: We assume the guest program can modify the `balance` fields of the accounts provided in `pre_states` and output them in `post_states`. The LSSA protocol enforces that the sum of balances is conserved (unless minting/burning, which we don't do).
+Trade-off:
+- Shared operational risk and larger state coordination requirements.
 
-## Repo Patterns Used
-- **Instruction Dispatch**: `read_nssa_inputs` and `write_nssa_outputs` from `nssa_core`.
-- **Account Structure**: `Account` struct with `data` and `balance`.
-- **Private Transaction**: `WalletCore::send_privacy_preserving_tx`.
+## 3. Native Token Movement via Chained `authenticated_transfer`
+
+Decision:
+- Do not mutate balances directly in paywall guest.
+- Emit chained calls to transfer native token balance.
+
+Why:
+- Reuses canonical transfer and authorization semantics already enforced by LSSA.
+
+## 4. Pool Authorization by PDA Seed
+
+Decision:
+- Redemption path authorizes pool sender using fixed PDA seed in chained call.
+
+Why:
+- Allows program-controlled spending of pool funds without exposing a private key.
+
+Constraint:
+- Pool account must be the expected PDA for this paywall program ID.
+
+## 5. Endpoint Identity Decoupled from Artist Payout Wallet
+
+Decision:
+- Artist publishes endpoint address derived from endpoint secret.
+- Artist redeems to a separate private recipient account.
+
+Why:
+- Prevents direct endpoint-to-wallet linkage.
+
+## 6. Off-Chain Message Transport with Signed JSON Bundle
+
+Decision:
+- Message and payment proof are transported off-chain via JSON (`ProofBundle`).
+- Bundle is signed by one-time payer pseudonym key.
+
+Why:
+- Keeps message transport simple while preserving cryptographic binding to paid ticket inputs.
+
+## 7. Replay Protection with On-Chain Nullifiers
+
+Decision:
+- Store consumed nullifiers in paywall state vectors.
+
+Why:
+- Enforces one-time redemption for each `(payment_secret, endpoint_secret)` pair.
+
+Trade-off:
+- Vector-backed state grows over time; acceptable for MVP.
+
+## 8. Data Structures: Vector Registries (MVP)
+
+Decision:
+- Use `Vec` for endpoints/commitments/nullifiers.
+
+Why:
+- Simple implementation and auditability for initial release.
+
+Trade-off:
+- No logarithmic proofs yet (future move to Merkle structures).
+
+## 9. Verification Direction
+
+Decision:
+- Payer proves payment to artist.
+- No artist acknowledgment flow back to payer.
+
+Why:
+- Matches main use case: artist filters messages by verified fee payment.

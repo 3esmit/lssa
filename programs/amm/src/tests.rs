@@ -11,6 +11,7 @@ use nssa_core::{
     program::{ChainedCall, ProgramId},
 };
 use token_core::{TokenDefinition, TokenHolding};
+use token_program::transfer::transfer as token_transfer;
 
 use crate::{
     add::add_liquidity, new_definition::new_definition, remove::remove_liquidity, swap::swap,
@@ -972,6 +973,32 @@ impl AccountForTests {
     }
 }
 
+fn fungible_balance(account: &Account) -> u128 {
+    let holding = TokenHolding::try_from(&account.data).expect("Expected valid token holding data");
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance,
+    } = holding
+    else {
+        panic!("Expected fungible token holding account");
+    };
+    balance
+}
+
+fn set_fungible_balance(account: &mut AccountWithMetadata, balance: u128) {
+    let mut holding =
+        TokenHolding::try_from(&account.account.data).expect("Expected valid token holding data");
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: account_balance,
+    } = &mut holding
+    else {
+        panic!("Expected fungible token holding account");
+    };
+    *account_balance = balance;
+    account.account.data = Data::from(&holding);
+}
+
 #[test]
 fn test_pool_pda_produces_unique_id_for_token_pair() {
     assert!(
@@ -1716,4 +1743,183 @@ fn test_call_swap_chained_call_successful_2() {
         chained_call_b,
         ChainedCallForTests::cc_swap_token_b_test_2()
     );
+}
+
+#[should_panic(expected = "Invalid recipient data")]
+#[test]
+fn test_report_validity_direct_transfer_to_pool_definition_fails() {
+    let _ = token_transfer(
+        AccountForTests::user_holding_a(),
+        AccountForTests::pool_definition_init(),
+        1,
+    );
+}
+
+#[should_panic(expected = "Invalid recipient data")]
+#[test]
+fn test_report_validity_direct_transfer_to_lp_definition_fails() {
+    let _ = token_transfer(
+        AccountForTests::user_holding_a(),
+        AccountForTests::pool_lp_init(),
+        1,
+    );
+}
+
+#[test]
+fn test_report_validity_direct_transfer_to_vault_creates_surplus() {
+    let transfer_amount = 25u128;
+    let sender = AccountForTests::user_holding_a();
+    let recipient = AccountForTests::vault_a_init();
+    let pool_definition =
+        PoolDefinition::try_from(&AccountForTests::pool_definition_init().account.data)
+            .expect("Pool definition must deserialize");
+
+    let post_states = token_transfer(sender.clone(), recipient.clone(), transfer_amount);
+    let [sender_post, recipient_post]: [_; 2] = post_states.try_into().unwrap();
+
+    let sender_balance_post = fungible_balance(sender_post.account());
+    let recipient_balance_post = fungible_balance(recipient_post.account());
+
+    assert_eq!(
+        sender_balance_post,
+        fungible_balance(&sender.account) - transfer_amount
+    );
+    assert_eq!(
+        recipient_balance_post - pool_definition.reserve_a,
+        transfer_amount
+    );
+}
+
+#[test]
+fn test_report_validity_add_liquidity_preserves_preexisting_surplus() {
+    let mut vault_a = AccountForTests::vault_a_init();
+    let mut vault_b = AccountForTests::vault_b_init();
+    set_fungible_balance(&mut vault_a, BalanceForTests::vault_a_reserve_init() + 300);
+    set_fungible_balance(&mut vault_b, BalanceForTests::vault_b_reserve_init() + 200);
+
+    let pool = AccountForTests::pool_definition_init();
+    let pre_pool_def = PoolDefinition::try_from(&pool.account.data).expect("Pool definition");
+    let pre_surplus_a = fungible_balance(&vault_a.account) - pre_pool_def.reserve_a;
+    let pre_surplus_b = fungible_balance(&vault_b.account) - pre_pool_def.reserve_b;
+
+    let (post_states, _) = add_liquidity(
+        pool,
+        vault_a.clone(),
+        vault_b.clone(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    );
+
+    let pool_post =
+        PoolDefinition::try_from(&post_states[0].account().data).expect("Pool definition");
+    let deposit_a = pool_post.reserve_a - pre_pool_def.reserve_a;
+    let deposit_b = pool_post.reserve_b - pre_pool_def.reserve_b;
+
+    let transfer_a_post = token_transfer(AccountForTests::user_holding_a(), vault_a, deposit_a);
+    let transfer_b_post = token_transfer(AccountForTests::user_holding_b(), vault_b, deposit_b);
+
+    let [_sender_a_post, vault_a_post]: [_; 2] = transfer_a_post.try_into().unwrap();
+    let [_sender_b_post, vault_b_post]: [_; 2] = transfer_b_post.try_into().unwrap();
+
+    let post_surplus_a = fungible_balance(vault_a_post.account()) - pool_post.reserve_a;
+    let post_surplus_b = fungible_balance(vault_b_post.account()) - pool_post.reserve_b;
+
+    assert_eq!(pre_surplus_a, post_surplus_a);
+    assert_eq!(pre_surplus_b, post_surplus_b);
+}
+
+#[test]
+fn test_report_validity_swap_preserves_preexisting_surplus() {
+    let mut vault_a = AccountForTests::vault_a_init();
+    let mut vault_b = AccountForTests::vault_b_init();
+    set_fungible_balance(&mut vault_a, BalanceForTests::vault_a_reserve_init() + 300);
+    set_fungible_balance(&mut vault_b, BalanceForTests::vault_b_reserve_init() + 200);
+
+    let pool = AccountForTests::pool_definition_init();
+    let pre_pool_def = PoolDefinition::try_from(&pool.account.data).expect("Pool definition");
+    let pre_surplus_a = fungible_balance(&vault_a.account) - pre_pool_def.reserve_a;
+    let pre_surplus_b = fungible_balance(&vault_b.account) - pre_pool_def.reserve_b;
+
+    let (post_states, _) = swap(
+        pool,
+        vault_a.clone(),
+        vault_b.clone(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_a_low(),
+        IdForTests::token_a_definition_id(),
+    );
+
+    let pool_post =
+        PoolDefinition::try_from(&post_states[0].account().data).expect("Pool definition");
+    let deposit_a = pool_post.reserve_a - pre_pool_def.reserve_a;
+    let withdraw_b = pre_pool_def.reserve_b - pool_post.reserve_b;
+
+    let transfer_a_post = token_transfer(AccountForTests::user_holding_a(), vault_a, deposit_a);
+    let transfer_b_post = token_transfer(vault_b, AccountForTests::user_holding_b(), withdraw_b);
+
+    let [_sender_a_post, vault_a_post]: [_; 2] = transfer_a_post.try_into().unwrap();
+    let [vault_b_post, _recipient_b_post]: [_; 2] = transfer_b_post.try_into().unwrap();
+
+    let post_surplus_a = fungible_balance(vault_a_post.account()) - pool_post.reserve_a;
+    let post_surplus_b = fungible_balance(vault_b_post.account()) - pool_post.reserve_b;
+
+    assert_eq!(pre_surplus_a, post_surplus_a);
+    assert_eq!(pre_surplus_b, post_surplus_b);
+}
+
+#[test]
+fn test_report_validity_remove_liquidity_preserves_and_strands_surplus_at_zero_lp_supply() {
+    let mut vault_a = AccountForTests::vault_a_init();
+    let mut vault_b = AccountForTests::vault_b_init();
+    set_fungible_balance(&mut vault_a, BalanceForTests::vault_a_reserve_init() + 300);
+    set_fungible_balance(&mut vault_b, BalanceForTests::vault_b_reserve_init() + 200);
+
+    let mut user_lp = AccountForTests::user_holding_lp_init();
+    set_fungible_balance(&mut user_lp, BalanceForTests::vault_a_reserve_init());
+
+    let pool = AccountForTests::pool_definition_init();
+    let pre_pool_def = PoolDefinition::try_from(&pool.account.data).expect("Pool definition");
+    let pre_surplus_a = fungible_balance(&vault_a.account) - pre_pool_def.reserve_a;
+    let pre_surplus_b = fungible_balance(&vault_b.account) - pre_pool_def.reserve_b;
+
+    let (post_states, _) = remove_liquidity(
+        pool,
+        vault_a.clone(),
+        vault_b.clone(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        user_lp,
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        1,
+        1,
+    );
+
+    let pool_post =
+        PoolDefinition::try_from(&post_states[0].account().data).expect("Pool definition");
+    let withdraw_a = pre_pool_def.reserve_a - pool_post.reserve_a;
+    let withdraw_b = pre_pool_def.reserve_b - pool_post.reserve_b;
+
+    let transfer_a_post = token_transfer(vault_a, AccountForTests::user_holding_a(), withdraw_a);
+    let transfer_b_post = token_transfer(vault_b, AccountForTests::user_holding_b(), withdraw_b);
+
+    let [vault_a_post, _recipient_a_post]: [_; 2] = transfer_a_post.try_into().unwrap();
+    let [vault_b_post, _recipient_b_post]: [_; 2] = transfer_b_post.try_into().unwrap();
+
+    let post_surplus_a = fungible_balance(vault_a_post.account()) - pool_post.reserve_a;
+    let post_surplus_b = fungible_balance(vault_b_post.account()) - pool_post.reserve_b;
+
+    assert_eq!(pre_surplus_a, post_surplus_a);
+    assert_eq!(pre_surplus_b, post_surplus_b);
+    assert_eq!(pool_post.liquidity_pool_supply, 0);
+    assert!(!pool_post.active);
+    assert!(post_surplus_a > 0);
+    assert!(post_surplus_b > 0);
 }

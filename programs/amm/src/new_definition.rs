@@ -129,18 +129,6 @@ pub fn new_definition(
         },
     );
 
-    // Chain call for liquidity token (TokenLP definition -> User LP Holding)
-    let instruction = if pool.account == Account::default() {
-        token_core::Instruction::NewFungibleDefinition {
-            name: String::from("LP Token"),
-            total_supply: initial_lp,
-        }
-    } else {
-        token_core::Instruction::Mint {
-            amount_to_mint: initial_lp,
-        }
-    };
-
     let mut pool_lp_auth = pool_definition_lp.clone();
     pool_lp_auth.is_authorized = true;
 

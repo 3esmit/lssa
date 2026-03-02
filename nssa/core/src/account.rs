@@ -15,7 +15,7 @@ pub mod data;
 pub struct Nonce(pub u128);
 
 impl Nonce {
-    pub fn public_account_nonce_increment(mut self) {
+    pub fn public_account_nonce_increment(&mut self) {
         self.0 += 1;
     }
 
@@ -281,6 +281,15 @@ mod tests {
         let nonce =
             Nonce(37937661125547691021612781941709513486).private_account_nonce_increment(&nsk);
         let expected_nonce = Nonce(327300903218789900388409116014290259894);
+        assert_eq!(nonce, expected_nonce);
+    }
+
+    #[test]
+    fn increment_public_nonce() {
+        let value = 42u128;
+        let mut nonce = Nonce(value);
+        nonce.public_account_nonce_increment();
+        let expected_nonce = Nonce(value + 1);
         assert_eq!(nonce, expected_nonce);
     }
 

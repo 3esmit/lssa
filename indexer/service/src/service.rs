@@ -75,6 +75,7 @@ impl indexer_service_rpc::RpcServer for IndexerService {
             .indexer
             .store
             .get_account_final(&account_id.into())
+            .await
             .map_err(db_error)?
             .into())
     }

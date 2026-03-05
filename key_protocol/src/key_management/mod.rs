@@ -62,9 +62,10 @@ impl KeyChain {
     pub fn calculate_shared_secret_receiver(
         &self,
         ephemeral_public_key_sender: EphemeralPublicKey,
+        index: Option<u32>,
     ) -> SharedSecretKey {
         SharedSecretKey::new(
-            &self.secret_spending_key.generate_viewing_secret_key(None),
+            &self.secret_spending_key.generate_viewing_secret_key(index),
             &ephemeral_public_key_sender,
         )
     }
@@ -101,8 +102,8 @@ mod tests {
         let ephemeral_public_key_sender = EphemeralPublicKey::from_scalar(scalar);
 
         // Calculate shared secret
-        let _shared_secret =
-            account_id_key_holder.calculate_shared_secret_receiver(ephemeral_public_key_sender);
+        let _shared_secret = account_id_key_holder
+            .calculate_shared_secret_receiver(ephemeral_public_key_sender, None);
     }
 
     #[test]

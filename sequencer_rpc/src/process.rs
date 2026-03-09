@@ -25,9 +25,7 @@ use common::{
 use itertools::Itertools as _;
 use log::warn;
 use nssa::{self, program::Program};
-use sequencer_core::{
-    block_settlement_client::BlockSettlementClientTrait, indexer_client::IndexerClientTrait,
-};
+use sequencer_core::{block_publisher::BlockPublisherTrait, indexer_client::IndexerClientTrait};
 use serde_json::Value;
 
 use super::{JsonHandler, respond, types::err_rpc::RpcErr};
@@ -56,7 +54,7 @@ pub trait Process: Send + Sync + 'static {
 }
 
 impl<
-    BC: BlockSettlementClientTrait + Send + Sync + 'static,
+    BC: BlockPublisherTrait + Send + Sync + 'static,
     IC: IndexerClientTrait + Send + Sync + 'static,
 > Process for JsonHandler<BC, IC>
 {
@@ -76,7 +74,7 @@ impl<
     }
 }
 
-impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> JsonHandler<BC, IC> {
+impl<BC: BlockPublisherTrait, IC: IndexerClientTrait> JsonHandler<BC, IC> {
     /// Example of request processing.
     fn process_temp_hello(request: Request) -> Result<Value, RpcErr> {
         let _hello_request = HelloRequest::parse(Some(request.params))?;
@@ -343,7 +341,6 @@ mod tests {
 
     use base58::ToBase58 as _;
     use base64::{Engine as _, engine::general_purpose};
-    use bedrock_client::BackoffConfig;
     use common::{
         block::AccountInitialData, config::BasicAuth, test_utils::sequencer_sign_key_for_testing,
         transaction::NSSATransaction,
@@ -351,7 +348,7 @@ mod tests {
     use nssa::AccountId;
     use sequencer_core::{
         config::{BedrockConfig, SequencerConfig},
-        mock::{MockBlockSettlementClient, MockIndexerClient, SequencerCoreWithMockClients},
+        mock::{MockBlockPublisher, MockIndexerClient, SequencerCoreWithMockClients},
     };
     use serde_json::Value;
     use tempfile::tempdir;
@@ -359,8 +356,7 @@ mod tests {
 
     use crate::rpc_handler;
 
-    type JsonHandlerWithMockClients =
-        crate::JsonHandler<MockBlockSettlementClient, MockIndexerClient>;
+    type JsonHandlerWithMockClients = crate::JsonHandler<MockBlockPublisher, MockIndexerClient>;
 
     fn sequencer_config_for_tests() -> SequencerConfig {
         let tempdir = tempdir().unwrap();
@@ -402,10 +398,6 @@ mod tests {
             signing_key: *sequencer_sign_key_for_testing().value(),
             retry_pending_blocks_timeout: Duration::from_secs(60 * 4),
             bedrock_config: BedrockConfig {
-                backoff: BackoffConfig {
-                    start_delay: Duration::from_millis(100),
-                    max_retries: 5,
-                },
                 channel_id: [42; 32].into(),
                 node_url: "http://localhost:8080".parse().unwrap(),
                 auth: Some(BasicAuth {
@@ -450,9 +442,7 @@ mod tests {
             .await
             .expect("Mempool is closed, this is a bug");
 
-        sequencer_core
-            .produce_new_block_with_mempool_transactions()
-            .unwrap();
+        sequencer_core.produce_new_block().await.unwrap();
 
         let max_block_size =
             usize::try_from(sequencer_core.sequencer_config().max_block_size.as_u64())

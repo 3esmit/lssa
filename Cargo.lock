@@ -3839,7 +3839,7 @@ dependencies = [
  "nssa",
  "nssa_core",
  "sequencer_core",
- "sequencer_runner",
+ "sequencer_service",
  "serde_json",
  "tempfile",
  "testcontainers",
@@ -7479,7 +7479,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sequencer_runner"
+name = "sequencer_service"
 version = "0.1.0"
 dependencies = [
  "actix",

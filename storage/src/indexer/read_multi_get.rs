@@ -10,7 +10,7 @@ pub struct DBMetadata {
 }
 
 impl RocksDBIO {
-    fn meta_keys_list() -> DbResult<Vec<Vec<u8>>> {
+    pub fn meta_keys_list() -> DbResult<Vec<Vec<u8>>> {
         let mut keys = vec![];
 
         keys.push(
@@ -54,7 +54,7 @@ impl RocksDBIO {
         Ok(keys)
     }
 
-    fn read_meta_all(&self) -> DbResult<Option<DBMetadata>> {
+    pub fn read_meta_all(&self) -> DbResult<Option<DBMetadata>> {
         let cf_meta = self.meta_column();
 
         let multi_get_res = self.db.multi_get_cf(

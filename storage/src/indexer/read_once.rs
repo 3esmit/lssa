@@ -201,23 +201,6 @@ impl RocksDBIO {
         }
     }
 
-    pub fn put_next_breakpoint(&self) -> DbResult<()> {
-        let last_block = self.get_meta_last_block_in_db()?;
-        let next_breakpoint_id = self.get_meta_last_breakpoint_id()? + 1;
-        let block_to_break_id = next_breakpoint_id * BREAKPOINT_INTERVAL;
-
-        if block_to_break_id <= last_block {
-            let next_breakpoint = self.calculate_state_for_id(block_to_break_id)?;
-
-            self.put_breakpoint(next_breakpoint_id, next_breakpoint)?;
-            self.put_meta_last_breakpoint_id(next_breakpoint_id)
-        } else {
-            Err(DbError::db_interaction_error(
-                "Breakpoint not yet achieved".to_string(),
-            ))
-        }
-    }
-
     // Mappings
 
     pub fn get_block_id_by_hash(&self, hash: [u8; 32]) -> DbResult<u64> {

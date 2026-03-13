@@ -8989,6 +8989,7 @@ dependencies = [
  "amm_core",
  "anyhow",
  "async-stream",
+ "base58",
  "base64 0.22.1",
  "borsh",
  "clap",

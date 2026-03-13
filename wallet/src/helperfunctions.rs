@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use anyhow::Result;
+use base58::ToBase58;
 use key_protocol::key_protocol_core::NSSAUserData;
 use nssa::Account;
 use nssa_core::account::Nonce;
@@ -155,13 +156,12 @@ pub(crate) struct HumanReadableAccount {
 
 impl From<Account> for HumanReadableAccount {
     fn from(account: Account) -> Self {
-        let program_owner = hex::encode(
-            account
-                .program_owner
-                .iter()
-                .flat_map(|n| n.to_le_bytes())
-                .collect::<Vec<u8>>(),
-        );
+        let program_owner = account
+            .program_owner
+            .iter()
+            .flat_map(|n| n.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .to_base58();
         let data = hex::encode(account.data);
         Self {
             balance: account.balance,

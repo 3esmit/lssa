@@ -9,6 +9,9 @@ use anyhow::{Context as _, Result};
 pub use bedrock_client::BackoffConfig;
 use common::config::BasicAuth;
 use humantime_serde;
+use key_protocol::initial_state::{
+    PrivateAccountPublicInitialData, PublicAccountPublicInitialData,
+};
 pub use logos_blockchain_core::mantle::ops::channel::ChannelId;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -32,6 +35,10 @@ pub struct IndexerConfig {
     pub consensus_info_polling_interval: Duration,
     pub bedrock_client_config: ClientConfig,
     pub channel_id: ChannelId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_accounts: Option<Vec<PublicAccountPublicInitialData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_commitments: Option<Vec<PrivateAccountPublicInitialData>>,
 }
 
 impl IndexerConfig {

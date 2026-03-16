@@ -14,6 +14,7 @@ use key_protocol::initial_state::initial_state;
 use log::{error, info, warn};
 use logos_blockchain_key_management_system_service::keys::{ED25519_SECRET_KEY_SIZE, Ed25519Key};
 use mempool::{MemPool, MemPoolHandle};
+use nssa::V02State;
 
 use crate::{
     block_settlement_client::{BlockSettlementClient, BlockSettlementClientTrait, MsgId},
@@ -101,7 +102,44 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
                 info!(
                     "No database found when starting the sequencer. Creating a fresh new with the initial data"
                 );
-                initial_state()
+
+                let initial_commitments: Option<Vec<nssa_core::Commitment>> = config
+                    .initial_commitments
+                    .clone()
+                    .map(|initial_commitments| {
+                        initial_commitments
+                            .iter()
+                            .map(|init_comm_data| {
+                                let npk = &init_comm_data.npk;
+
+                                let mut acc = init_comm_data.account.clone();
+
+                                acc.program_owner =
+                                    nssa::program::Program::authenticated_transfer_program().id();
+
+                                nssa_core::Commitment::new(npk, &acc)
+                            })
+                            .collect()
+                    });
+
+                let init_accs: Option<Vec<(nssa::AccountId, u128)>> =
+                    config.initial_accounts.clone().map(|initial_accounts| {
+                        initial_accounts
+                            .iter()
+                            .map(|acc_data| (acc_data.account_id, acc_data.balance))
+                            .collect()
+                    });
+
+                // If initial commitments or accounts are present in config, need to construct state
+                // from them
+                if initial_commitments.is_some() || init_accs.is_some() {
+                    V02State::new_with_genesis_accounts(
+                        &init_accs.unwrap_or_default(),
+                        &initial_commitments.unwrap_or_default(),
+                    )
+                } else {
+                    initial_state()
+                }
             }
         };
 
@@ -379,6 +417,8 @@ mod tests {
             },
             retry_pending_blocks_timeout: Duration::from_secs(60 * 4),
             indexer_rpc_url: "ws://localhost:8779".parse().unwrap(),
+            initial_accounts: None,
+            initial_commitments: None,
         }
     }
 

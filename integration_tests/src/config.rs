@@ -2,16 +2,19 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
-use common::block::{AccountInitialData, CommitmentsInitialData};
 use indexer_service::{BackoffConfig, ChannelId, ClientConfig, IndexerConfig};
-use key_protocol::key_management::KeyChain;
+use key_protocol::{
+    initial_state::{
+        PrivateAccountPrivateInitialData, PrivateAccountPublicInitialData,
+        PublicAccountPrivateInitialData, PublicAccountPublicInitialData,
+    },
+    key_management::KeyChain,
+};
 use nssa::{Account, AccountId, PrivateKey, PublicKey};
 use nssa_core::{account::Data, program::DEFAULT_PROGRAM_ID};
 use sequencer_core::config::{BedrockConfig, SequencerConfig};
 use url::Url;
-use wallet::config::{
-    InitialAccountData, InitialAccountDataPrivate, InitialAccountDataPublic, WalletConfig,
-};
+use wallet::config::{InitialAccountData, WalletConfig};
 
 pub fn indexer_config(
     bedrock_addr: SocketAddr,
@@ -30,8 +33,8 @@ pub fn indexer_config(
                 max_retries: 10,
             },
         },
-        initial_accounts: initial_data.sequencer_initial_accounts(),
-        initial_commitments: initial_data.sequencer_initial_commitments(),
+        initial_accounts: Some(initial_data.sequencer_initial_accounts()),
+        initial_commitments: Some(initial_data.sequencer_initial_commitments()),
         signing_key: [37; 32],
         channel_id: bedrock_channel_id(),
     })
@@ -81,8 +84,8 @@ pub fn sequencer_config(
         block_create_timeout,
         retry_pending_blocks_timeout: Duration::from_secs(120),
         port: 0,
-        initial_accounts: initial_data.sequencer_initial_accounts(),
-        initial_commitments: initial_data.sequencer_initial_commitments(),
+        initial_accounts: Some(initial_data.sequencer_initial_accounts()),
+        initial_commitments: Some(initial_data.sequencer_initial_commitments()),
         signing_key: [37; 32],
         bedrock_config: BedrockConfig {
             backoff: BackoffConfig {
@@ -111,7 +114,7 @@ pub fn wallet_config(
         seq_tx_poll_max_blocks: 15,
         seq_poll_max_retries: 10,
         seq_block_poll_max_amount: 100,
-        initial_accounts: initial_data.wallet_initial_accounts(),
+        initial_accounts: Some(initial_data.wallet_initial_accounts()),
         basic_auth: None,
     })
 }
@@ -184,13 +187,13 @@ impl InitialData {
         }
     }
 
-    fn sequencer_initial_accounts(&self) -> Vec<AccountInitialData> {
+    fn sequencer_initial_accounts(&self) -> Vec<PublicAccountPublicInitialData> {
         self.public_accounts
             .iter()
             .map(|(priv_key, balance)| {
                 let pub_key = PublicKey::new_from_private_key(priv_key);
                 let account_id = AccountId::from(&pub_key);
-                AccountInitialData {
+                PublicAccountPublicInitialData {
                     account_id,
                     balance: *balance,
                 }
@@ -198,10 +201,10 @@ impl InitialData {
             .collect()
     }
 
-    fn sequencer_initial_commitments(&self) -> Vec<CommitmentsInitialData> {
+    fn sequencer_initial_commitments(&self) -> Vec<PrivateAccountPublicInitialData> {
         self.private_accounts
             .iter()
-            .map(|(key_chain, account)| CommitmentsInitialData {
+            .map(|(key_chain, account)| PrivateAccountPublicInitialData {
                 npk: key_chain.nullifer_public_key.clone(),
                 account: account.clone(),
             })
@@ -214,14 +217,14 @@ impl InitialData {
             .map(|(priv_key, _)| {
                 let pub_key = PublicKey::new_from_private_key(priv_key);
                 let account_id = AccountId::from(&pub_key);
-                InitialAccountData::Public(InitialAccountDataPublic {
+                InitialAccountData::Public(PublicAccountPrivateInitialData {
                     account_id,
                     pub_sign_key: priv_key.clone(),
                 })
             })
             .chain(self.private_accounts.iter().map(|(key_chain, account)| {
                 let account_id = AccountId::from(&key_chain.nullifer_public_key);
-                InitialAccountData::Private(InitialAccountDataPrivate {
+                InitialAccountData::Private(PrivateAccountPrivateInitialData {
                     account_id,
                     account: account.clone(),
                     key_chain: key_chain.clone(),

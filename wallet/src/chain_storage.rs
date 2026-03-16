@@ -95,18 +95,39 @@ impl WalletChainStore {
         let mut public_init_acc_map = BTreeMap::new();
         let mut private_init_acc_map = BTreeMap::new();
 
-        for init_acc_data in InitialAccountData::create_initial_accounts_data() {
-            match init_acc_data {
-                InitialAccountData::Public(data) => {
-                    public_init_acc_map.insert(data.account_id, data.pub_sign_key);
+        // If initial accounts are present in config, need to construct state from them
+        if let Some(initial_accounts) = config.initial_accounts.clone() {
+            for init_acc_data in initial_accounts {
+                match init_acc_data {
+                    InitialAccountData::Public(data) => {
+                        public_init_acc_map.insert(data.account_id, data.pub_sign_key);
+                    }
+                    InitialAccountData::Private(data) => {
+                        let mut account = data.account;
+                        // TODO: Program owner is only known after code is compiled and can't be set
+                        // in the config. Therefore we overwrite it here on
+                        // startup. Fix this when program id can be fetched
+                        // from the node and queried from the wallet.
+                        account.program_owner = Program::authenticated_transfer_program().id();
+                        private_init_acc_map.insert(data.account_id, (data.key_chain, account));
+                    }
                 }
-                InitialAccountData::Private(data) => {
-                    let mut account = data.account;
-                    // TODO: Program owner is only known after code is compiled and can't be set in
-                    // the config. Therefore we overwrite it here on startup. Fix this when program
-                    // id can be fetched from the node and queried from the wallet.
-                    account.program_owner = Program::authenticated_transfer_program().id();
-                    private_init_acc_map.insert(data.account_id, (data.key_chain, account));
+            }
+        } else {
+            for init_acc_data in InitialAccountData::create_initial_accounts_data() {
+                match init_acc_data {
+                    InitialAccountData::Public(data) => {
+                        public_init_acc_map.insert(data.account_id, data.pub_sign_key);
+                    }
+                    InitialAccountData::Private(data) => {
+                        let mut account = data.account;
+                        // TODO: Program owner is only known after code is compiled and can't be set
+                        // in the config. Therefore we overwrite it here on
+                        // startup. Fix this when program id can be fetched
+                        // from the node and queried from the wallet.
+                        account.program_owner = Program::authenticated_transfer_program().id();
+                        private_init_acc_map.insert(data.account_id, (data.key_chain, account));
+                    }
                 }
             }
         }
@@ -173,6 +194,7 @@ mod tests {
             seq_poll_max_retries: 10,
             seq_block_poll_max_amount: 100,
             basic_auth: None,
+            initial_accounts: None,
         }
     }
 

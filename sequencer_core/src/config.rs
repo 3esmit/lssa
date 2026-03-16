@@ -10,6 +10,9 @@ use bedrock_client::BackoffConfig;
 use bytesize::ByteSize;
 use common::config::BasicAuth;
 use humantime_serde;
+use key_protocol::initial_state::{
+    PrivateAccountPublicInitialData, PublicAccountPublicInitialData,
+};
 use logos_blockchain_core::mantle::ops::channel::ChannelId;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -46,6 +49,10 @@ pub struct SequencerConfig {
     pub bedrock_config: BedrockConfig,
     /// Indexer RPC URL
     pub indexer_rpc_url: Url,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_accounts: Option<Vec<PublicAccountPublicInitialData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_commitments: Option<Vec<PrivateAccountPublicInitialData>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

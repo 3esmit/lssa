@@ -201,6 +201,8 @@ pub struct WalletConfig {
     /// Basic authentication credentials
     #[serde(skip_serializing_if = "Option::is_none")]
     pub basic_auth: Option<BasicAuth>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_accounts: Option<Vec<InitialAccountData>>,
 }
 
 impl Default for WalletConfig {
@@ -213,6 +215,7 @@ impl Default for WalletConfig {
             seq_poll_max_retries: 5,
             seq_block_poll_max_amount: 100,
             basic_auth: None,
+            initial_accounts: None,
         }
     }
 }
@@ -263,6 +266,7 @@ impl WalletConfig {
             seq_poll_max_retries,
             seq_block_poll_max_amount,
             basic_auth,
+            initial_accounts,
         } = self;
 
         let WalletConfigOverrides {
@@ -273,6 +277,7 @@ impl WalletConfig {
             seq_poll_max_retries: o_seq_poll_max_retries,
             seq_block_poll_max_amount: o_seq_block_poll_max_amount,
             basic_auth: o_basic_auth,
+            initial_accounts: o_initial_accounts,
         } = overrides;
 
         if let Some(v) = o_override_rust_log {
@@ -302,6 +307,10 @@ impl WalletConfig {
         if let Some(v) = o_basic_auth {
             warn!("Overriding wallet config 'basic_auth' to {v:#?}");
             *basic_auth = v;
+        }
+        if let Some(v) = o_initial_accounts {
+            warn!("Overriding wallet config 'initial_accounts' to {v:#?}");
+            *initial_accounts = v;
         }
     }
 }

@@ -73,6 +73,10 @@ pub fn remove_liquidity(
         user_lp_balance <= pool_def_data.liquidity_pool_supply,
         "Invalid liquidity account provided"
     );
+    assert!(
+        remove_liquidity_amount <= user_lp_balance,
+        "Requested liquidity removal exceeds user LP balance"
+    );
     assert_eq!(
         user_holding_lp_data.definition_id(),
         pool_def_data.liquidity_pool_id,

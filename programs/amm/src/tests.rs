@@ -320,7 +320,7 @@ impl ChainedCallForTests {
                 AccountForTests::vault_a_init(),
             ],
             &token_core::Instruction::Transfer {
-                amount_to_transfer: BalanceForTests::add_successful_amount_a(),
+                amount_to_transfer: BalanceForTests::vault_a_reserve_init(),
             },
         )
     }
@@ -333,7 +333,7 @@ impl ChainedCallForTests {
                 AccountForTests::vault_b_init(),
             ],
             &token_core::Instruction::Transfer {
-                amount_to_transfer: BalanceForTests::add_successful_amount_b(),
+                amount_to_transfer: BalanceForTests::vault_b_reserve_init(),
             },
         )
     }
@@ -343,6 +343,39 @@ impl ChainedCallForTests {
             TOKEN_PROGRAM_ID,
             vec![
                 AccountForTests::pool_lp_init(),
+                AccountForTests::user_holding_lp_uninit(),
+            ],
+            &token_core::Instruction::Mint {
+                amount_to_mint: BalanceForTests::lp_supply_init(),
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    }
+
+    fn cc_new_definition_token_lp_uninit() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountForTests::pool_lp_uninit(),
+                AccountForTests::user_holding_lp_uninit(),
+            ],
+            &token_core::Instruction::NewFungibleDefinition {
+                name: String::from("LP Token"),
+                total_supply: BalanceForTests::lp_supply_init(),
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    }
+
+    fn cc_new_definition_token_lp_zero_supply() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountForTests::pool_lp_zero_supply(),
                 AccountForTests::user_holding_lp_uninit(),
             ],
             &token_core::Instruction::Mint {
@@ -426,6 +459,22 @@ impl AccountForTests {
         AccountWithMetadata {
             account: Account {
                 program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::user_token_b_balance(),
+                }),
+                nonce: 0,
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_b_id(),
+        }
+    }
+
+    fn user_holding_b_different_program() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: [16; 8],
                 balance: 0u128,
                 data: Data::from(&TokenHolding::Fungible {
                     definition_id: IdForTests::token_b_definition_id(),
@@ -600,6 +649,31 @@ impl AccountForTests {
         }
     }
 
+    fn pool_lp_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
+    fn pool_lp_zero_supply() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("test"),
+                    total_supply: 0,
+                    metadata_id: None,
+                }),
+                nonce: 0,
+            },
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
     fn user_holding_lp_uninit() -> AccountWithMetadata {
         AccountWithMetadata {
             account: Account {
@@ -629,6 +703,30 @@ impl AccountForTests {
             },
             is_authorized: true,
             account_id: IdForTests::user_token_lp_id(),
+        }
+    }
+
+    fn user_holding_lp_full_balance() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_lp_definition_id(),
+                    balance: BalanceForTests::lp_supply_init(),
+                }),
+                nonce: 0,
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_lp_id(),
+        }
+    }
+
+    fn pool_definition_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
         }
     }
 
@@ -864,6 +962,30 @@ impl AccountForTests {
                     reserve_b: BalanceForTests::vault_b_remove_successful(),
                     fees: 0u128,
                     active: true,
+                }),
+                nonce: 0,
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_inactive_empty() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: 0,
+                    reserve_a: 0,
+                    reserve_b: 0,
+                    fees: 0u128,
+                    active: false,
                 }),
                 nonce: 0,
             },
@@ -1196,6 +1318,23 @@ fn test_call_add_liquidity_payable_lp_zero() {
     );
 }
 
+#[should_panic(expected = "Payable LP is less than provided minimum LP amount")]
+#[test]
+fn test_call_add_liquidity_min_lp_above_quote() {
+    let _post_states = add_liquidity(
+        AccountForTests::pool_definition_init(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_init(),
+        NonZero::new(283).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    );
+}
+
 #[test]
 fn test_call_add_liquidity_chained_call_successsful() {
     let (post_states, chained_calls) = add_liquidity(
@@ -1365,6 +1504,40 @@ fn test_call_remove_liquidity_min_bal_zero_2() {
     );
 }
 
+#[should_panic(expected = "Pool is inactive")]
+#[test]
+fn test_call_remove_liquidity_inactive_pool() {
+    let _post_states = remove_liquidity(
+        AccountForTests::pool_definition_inactive_empty(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_zero_supply(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    );
+}
+
+#[should_panic(expected = "Requested liquidity removal exceeds user LP balance")]
+#[test]
+fn test_call_remove_liquidity_amount_exceeds_user_lp_balance() {
+    let _post_states = remove_liquidity(
+        AccountForTests::pool_definition_init(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp() + 1).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    );
+}
+
 #[test]
 fn test_call_remove_liquidity_chained_call_successful() {
     let (post_states, chained_calls) = remove_liquidity(
@@ -1391,6 +1564,74 @@ fn test_call_remove_liquidity_chained_call_successful() {
     assert!(chained_call_a == ChainedCallForTests::cc_remove_token_a());
     assert!(chained_call_b == ChainedCallForTests::cc_remove_token_b());
     assert!(chained_call_lp == ChainedCallForTests::cc_remove_pool_lp());
+}
+
+#[test]
+fn test_call_remove_liquidity_full_exit_deactivates_pool() {
+    let (post_states, chained_calls) = remove_liquidity(
+        AccountForTests::pool_definition_init(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_full_balance(),
+        NonZero::new(BalanceForTests::lp_supply_init()).unwrap(),
+        1,
+        1,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert_eq!(
+        AccountForTests::pool_definition_inactive_empty().account,
+        *pool_post.account()
+    );
+
+    let mut vault_a_auth = AccountForTests::vault_a_init();
+    vault_a_auth.is_authorized = true;
+    let mut vault_b_auth = AccountForTests::vault_b_init();
+    vault_b_auth.is_authorized = true;
+
+    let expected_chained_call_lp = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![
+            AccountForTests::pool_lp_init(),
+            AccountForTests::user_holding_lp_full_balance(),
+        ],
+        &token_core::Instruction::Burn {
+            amount_to_burn: BalanceForTests::lp_supply_init(),
+        },
+    )
+    .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+        IdForTests::pool_definition_id(),
+    )]);
+    let expected_chained_call_b = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![vault_b_auth, AccountForTests::user_holding_b()],
+        &token_core::Instruction::Transfer {
+            amount_to_transfer: BalanceForTests::vault_b_reserve_init(),
+        },
+    )
+    .with_pda_seeds(vec![compute_vault_pda_seed(
+        IdForTests::pool_definition_id(),
+        IdForTests::token_b_definition_id(),
+    )]);
+    let expected_chained_call_a = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![vault_a_auth, AccountForTests::user_holding_a()],
+        &token_core::Instruction::Transfer {
+            amount_to_transfer: BalanceForTests::vault_a_reserve_init(),
+        },
+    )
+    .with_pda_seeds(vec![compute_vault_pda_seed(
+        IdForTests::pool_definition_id(),
+        IdForTests::token_a_definition_id(),
+    )]);
+
+    assert_eq!(chained_calls[0], expected_chained_call_lp);
+    assert_eq!(chained_calls[1], expected_chained_call_b);
+    assert_eq!(chained_calls[2], expected_chained_call_a);
 }
 
 #[should_panic(expected = "Balances must be nonzero")]
@@ -1529,14 +1770,13 @@ fn test_call_new_definition_cannot_initialize_active_pool() {
     );
 }
 
-#[should_panic(expected = "Cannot initialize an active Pool Definition")]
 #[test]
 fn test_call_new_definition_chained_call_successful() {
     let (post_states, chained_calls) = new_definition(
-        AccountForTests::pool_definition_active(),
+        AccountForTests::pool_definition_inactive_empty(),
         AccountForTests::vault_a_init(),
         AccountForTests::vault_b_init(),
-        AccountForTests::pool_lp_init(),
+        AccountForTests::pool_lp_zero_supply(),
         AccountForTests::user_holding_a(),
         AccountForTests::user_holding_b(),
         AccountForTests::user_holding_lp_uninit(),
@@ -1547,15 +1787,86 @@ fn test_call_new_definition_chained_call_successful() {
 
     let pool_post = post_states[0].clone();
 
-    assert!(AccountForTests::pool_definition_add_successful().account == *pool_post.account());
+    assert_eq!(
+        AccountForTests::pool_definition_init().account,
+        *pool_post.account()
+    );
+    assert!(!pool_post.requires_claim());
 
     let chained_call_lp = chained_calls[0].clone();
     let chained_call_b = chained_calls[1].clone();
     let chained_call_a = chained_calls[2].clone();
 
-    assert!(chained_call_a == ChainedCallForTests::cc_new_definition_token_a());
-    assert!(chained_call_b == ChainedCallForTests::cc_new_definition_token_b());
-    assert!(chained_call_lp == ChainedCallForTests::cc_new_definition_token_lp());
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_new_definition_token_a()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_new_definition_token_b()
+    );
+    assert_eq!(
+        chained_call_lp,
+        ChainedCallForTests::cc_new_definition_token_lp_zero_supply()
+    );
+}
+
+#[should_panic(expected = "User Token holdings must use the same Token Program")]
+#[test]
+fn test_call_new_definition_different_token_programs() {
+    let _post_states = new_definition(
+        AccountForTests::pool_definition_uninit(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_uninit(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b_different_program(),
+        AccountForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        AMM_PROGRAM_ID,
+    );
+}
+
+#[test]
+fn test_call_new_definition_fresh_pool_claims_pool_and_creates_lp_definition() {
+    let (post_states, chained_calls) = new_definition(
+        AccountForTests::pool_definition_uninit(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_uninit(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        AMM_PROGRAM_ID,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert_eq!(
+        AccountForTests::pool_definition_init().account,
+        *pool_post.account()
+    );
+    assert!(pool_post.requires_claim());
+
+    let chained_call_lp = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+    let chained_call_a = chained_calls[2].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_new_definition_token_a()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_new_definition_token_b()
+    );
+    assert_eq!(
+        chained_call_lp,
+        ChainedCallForTests::cc_new_definition_token_lp_uninit()
+    );
 }
 
 #[should_panic(expected = "AccountId is not a token type for the pool")]
@@ -1659,6 +1970,21 @@ fn test_call_swap_below_min_out() {
         AccountForTests::user_holding_b(),
         BalanceForTests::add_max_amount_a(),
         BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    );
+}
+
+#[should_panic(expected = "Withdraw amount should be nonzero")]
+#[test]
+fn test_call_swap_zero_output() {
+    let _post_states = swap(
+        AccountForTests::pool_definition_init_reserve_b_low(),
+        AccountForTests::vault_a_init_high(),
+        AccountForTests::vault_b_init_low(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        1,
+        0,
         IdForTests::token_a_definition_id(),
     );
 }

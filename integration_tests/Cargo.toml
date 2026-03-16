@@ -14,6 +14,7 @@ common.workspace = true
 key_protocol.workspace = true
 indexer_service.workspace = true
 serde_json.workspace = true
+amm_core.workspace = true
 token_core.workspace = true
 indexer_service_rpc.workspace = true
 wallet-ffi.workspace = true

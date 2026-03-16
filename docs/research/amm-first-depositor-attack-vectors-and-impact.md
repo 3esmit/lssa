@@ -131,6 +131,47 @@ That is not what happens here. After a full drain, the attacker does not need to
 
 That distinction is why this issue is more serious than a normal AMM price move. The attacker is not just moving the market. They are resetting it.
 
+## How established AMMs handled this on Ethereum and Solana
+
+This problem is not unique to this AMM. Mature AMM designs in Ethereum and
+Solana usually protect two invariants:
+
+- An existing pool cannot be treated as a brand-new market again.
+- A tiny base amount of liquidity or LP value remains permanently unavailable
+  for normal withdrawal.
+
+### Ethereum: Uniswap v2
+
+The clearest Ethereum reference is the [Uniswap v2 whitepaper](https://docs.uniswap.org/whitepaper.pdf) and the official [`UniswapV2Pair.sol`](https://github.com/Uniswap/v2-core/blob/master/contracts/UniswapV2Pair.sol) contract.
+
+Uniswap v2 handles this in two ways.
+
+First, pair creation is a one-time event. Pairs are created by a factory at deterministic addresses, and the pair contract's `initialize` function is factory-only. In practice, that means an existing pair is not meant to be re-initialized as a fresh market.
+
+Second, Uniswap v2 permanently locks a minimum amount of LP supply. The pair contract defines `MINIMUM_LIQUIDITY = 10**3`. On the first mint, it computes LP issuance from the geometric mean of the deposited token amounts and mints that minimum amount to the zero address instead of to the first LP. The whitepaper explains that this raises the cost of attacks that rely on making a tiny amount of LP supply disproportionately valuable.
+
+The design lesson from Ethereum is that established AMMs did not rely on only one control. They combined one-time pair creation with permanently locked minimum liquidity.
+
+### Solana: one-time pool identity and retained minimum liquidity
+
+On Solana, the mechanism varies by AMM, but the same ideas appear.
+
+The canonical [SPL Token Swap reference program](https://github.com/solana-labs/solana-program-library/tree/master/token-swap)
+solves the identity side by making initialization one-time. In [`processor.rs`](https://github.com/solana-labs/solana-program-library/blob/master/token-swap/program/src/processor.rs), `process_initialize` rejects an already initialized swap with `AlreadyInUse`, so a drained swap account is not treated as a fresh pool. The same reference program also makes first-pool economics explicit in [`calculator.rs`](https://github.com/solana-labs/solana-program-library/blob/master/token-swap/program/src/curve/calculator.rs), where `INITIAL_SWAP_POOL_AMOUNT` is hard-coded to `1_000_000_000`.
+
+Raydium's [pool-creation documentation](https://docs.raydium.io/raydium/updates/archive/creating-an-openbook-amm-pool) is even closer to the protection this AMM needs. It states that the same OpenBook market ID cannot be used for more than one LP, which preserves one-time pool identity. It also states that a small fraction of the initial liquidity is transferred to the pool vaults instead of being minted as LP tokens. The reason given in the docs is directly relevant here: the pool should never become empty, and new LP tokens must remain mintable even if the previous LP supply is removed or burned.
+
+So the Solana ecosystem does not point to a single universal formula. Instead, it points to the same conclusion from two directions:
+
+- the pool must have one-time initialization semantics, and
+- the pool benefits from retaining a minimum amount of locked liquidity or LP   value that ordinary users cannot fully redeem.
+
+### What this means for this AMM
+
+Ethereum and Solana reference designs converge on the same answer. If you want to remove repeat first-depositor privilege, you must protect both pool identity and pool floor.
+
+If you protect only identity, you can still end up with awkward zero-liquidity states. If you protect only the liquidity floor, you still leave a risky re-initialization surface behind. Mature AMMs generally avoid the problem by closing both gaps.
+
 ## Design implications
 
 This research points to two protocol requirements.

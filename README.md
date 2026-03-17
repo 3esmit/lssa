@@ -73,6 +73,16 @@ This design keeps public transactions as fast as any RISC-V–based VM and makes
 ---
 ---
 
+# Versioning
+
+We release versions as git tags (e.g. `v0.1.0`). If no critical issues with version is found you can expect it to be immutable. All further features and fixes will be a part of the next tag. As the project is in active development we don't provide backward compatibility yet.
+For each tag we publish docker images of our services.
+If you depend on this project you can pin your rust dependency to a git tag like this:
+
+```toml
+nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.1.0" }
+```
+
 # Install dependencies
 ### Install build dependencies
 
@@ -141,12 +151,12 @@ The sequencer and logos blockchain node can be run locally:
     - `./scripts/setup-logos-blockchain-circuits.sh`
     - `cargo build --all-features`
     - `./target/debug/logos-blockchain-node --deployment nodes/node/standalone-deployment-config.yaml nodes/node/standalone-node-config.yaml`
-    
+
  - Alternatively (WARNING: This node is outdated) go to `logos-blockchain/lssa/` repo and run the node from docker:
     - `cd bedrock`
     - Change line 14 of `docker-compose.yml` from `"0:18080/tcp"` into `"8080:18080/tcp"`
     - `docker compose up`
-     
+
  2. On another terminal go to the `logos-blockchain/lssa` repo and run indexer service:
       - `RUST_LOG=info cargo run -p indexer_service indexer/service/configs/indexer_config.json`
 

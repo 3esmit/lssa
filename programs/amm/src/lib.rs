@@ -14,4 +14,5 @@ pub mod new_definition;
 pub mod remove;
 pub mod swap;
 
+#[cfg(test)]
 mod tests;

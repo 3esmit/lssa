@@ -242,7 +242,6 @@ impl RocksDBIO {
         let last_curr_block = self.get_meta_last_block_in_db()?;
         let mut write_batch = WriteBatch::default();
 
-        // ToDo: rewrite this with write batching
 
         write_batch.put_cf(
             &cf_block,

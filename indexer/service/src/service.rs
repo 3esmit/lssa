@@ -74,7 +74,8 @@ impl indexer_service_rpc::RpcServer for IndexerService {
         Ok(self
             .indexer
             .store
-            .get_account_final(&account_id.into())
+            .account_current_state(&account_id.into())
+            .await
             .map_err(db_error)?
             .into())
     }
@@ -131,7 +132,11 @@ impl indexer_service_rpc::RpcServer for IndexerService {
 
     async fn healthcheck(&self) -> Result<(), ErrorObjectOwned> {
         // Checking, that indexer can calculate last state
-        let _ = self.indexer.store.final_state().map_err(db_error)?;
+        let _ = self
+            .indexer
+            .store
+            .recalculate_final_state()
+            .map_err(db_error)?;
 
         Ok(())
     }

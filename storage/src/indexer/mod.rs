@@ -8,10 +8,10 @@ use rocksdb::{
 
 use crate::error::DbError;
 
-pub mod read_multi_get;
+pub mod read_multiple;
 pub mod read_once;
-pub mod write_batch;
-pub mod write_once;
+pub mod write_atomic;
+pub mod write_non_atomic;
 
 /// Maximal size of stored blocks in base.
 ///
@@ -56,13 +56,6 @@ pub const CF_ACC_META: &str = "cf_acc_meta";
 pub const CF_ACC_TO_TX: &str = "cf_acc_to_tx";
 
 pub type DbResult<T> = Result<T, DbError>;
-
-fn closest_breakpoint_id(block_id: u64) -> u64 {
-    block_id
-        .saturating_sub(1)
-        .checked_div(u64::from(BREAKPOINT_INTERVAL))
-        .expect("Breakpoint interval is not zero")
-}
 
 pub struct RocksDBIO {
     pub db: DBWithThreadMode<MultiThreaded>,
@@ -184,7 +177,9 @@ impl RocksDBIO {
                 self.get_meta_first_block_in_db()?
             };
 
-            for block in self.get_block_batch_seq((start + 1)..=block_id)? {
+            for block in self.get_block_batch_seq(
+                start.checked_add(1).expect("Will be lesser that u64::MAX")..=block_id,
+            )? {
                 for transaction in block.body.transactions {
                     transaction
                         .transaction_stateless_check()
@@ -215,31 +210,23 @@ impl RocksDBIO {
     }
 }
 
-#[allow(clippy::shadow_unrelated)]
+fn closest_breakpoint_id(block_id: u64) -> u64 {
+    block_id
+        .saturating_sub(1)
+        .checked_div(u64::from(BREAKPOINT_INTERVAL))
+        .expect("Breakpoint interval is not zero")
+}
+
+#[expect(clippy::shadow_unrelated, reason = "Fine for tests")]
 #[cfg(test)]
 mod tests {
-    use common::transaction::NSSATransaction;
-    use nssa::AccountId;
+    use nssa::{AccountId, PublicKey};
     use tempfile::tempdir;
 
     use super::*;
 
     fn genesis_block() -> Block {
         common::test_utils::produce_dummy_block(1, None, vec![])
-    }
-
-    fn acc1() -> AccountId {
-        AccountId::new([
-            148, 179, 206, 253, 199, 51, 82, 86, 232, 2, 152, 122, 80, 243, 54, 207, 237, 112, 83,
-            153, 44, 59, 204, 49, 128, 84, 160, 227, 216, 149, 97, 102,
-        ])
-    }
-
-    fn acc2() -> AccountId {
-        AccountId::new([
-            30, 145, 107, 3, 207, 73, 192, 230, 160, 63, 238, 207, 18, 69, 54, 216, 103, 244, 92,
-            94, 124, 248, 42, 16, 141, 19, 119, 18, 14, 226, 140, 204,
-        ])
     }
 
     fn acc1_sign_key() -> nssa::PrivateKey {
@@ -250,28 +237,12 @@ mod tests {
         nssa::PrivateKey::try_new([2; 32]).unwrap()
     }
 
-    fn initial_state() -> V02State {
-        nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[])
+    fn acc1() -> AccountId {
+        AccountId::from(&PublicKey::new_from_private_key(&acc1_sign_key()))
     }
 
-    fn transfer(amount: u128, nonce: u128, direction: bool) -> NSSATransaction {
-        let from;
-        let to;
-        let sign_key;
-
-        if direction {
-            from = acc1();
-            to = acc2();
-            sign_key = acc1_sign_key();
-        } else {
-            from = acc2();
-            to = acc1();
-            sign_key = acc2_sign_key();
-        }
-
-        common::test_utils::create_transaction_native_token_transfer(
-            from, nonce, to, amount, &sign_key,
-        )
+    fn acc2() -> AccountId {
+        AccountId::from(&PublicKey::new_from_private_key(&acc2_sign_key()))
     }
 
     #[test]
@@ -279,8 +250,12 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let temdir_path = temp_dir.path();
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
         let first_id = dbio.get_meta_first_block_in_db().unwrap();
@@ -312,11 +287,20 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let temdir_path = temp_dir.path();
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
 
         let prev_hash = genesis_block().header.hash;
-        let transfer_tx = transfer(1, 0, true);
+        let from = acc1();
+        let to = acc2();
+        let sign_key = acc1_sign_key();
+
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 0, to, 1, &sign_key);
         let block = common::test_utils::produce_dummy_block(2, Some(prev_hash), vec![transfer_tx]);
 
         dbio.put_block(&block, [1; 32]).unwrap();
@@ -356,15 +340,30 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let temdir_path = temp_dir.path();
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
+
+        let from = acc1();
+        let to = acc2();
+        let sign_key = acc1_sign_key();
 
         for i in 1..=BREAKPOINT_INTERVAL {
             let last_id = dbio.get_meta_last_block_in_db().unwrap();
             let last_block = dbio.get_block(last_id).unwrap();
 
             let prev_hash = last_block.header.hash;
-            let transfer_tx = transfer(1, (i - 1).into(), true);
+
+            let transfer_tx = common::test_utils::create_transaction_native_token_transfer(
+                from,
+                (i - 1).into(),
+                to,
+                1,
+                &sign_key,
+            );
             let block = common::test_utils::produce_dummy_block(
                 (i + 1).into(),
                 Some(prev_hash),
@@ -414,14 +413,23 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let temdir_path = temp_dir.path();
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
+
+        let from = acc1();
+        let to = acc2();
+        let sign_key = acc1_sign_key();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 0, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 0, to, 1, &sign_key);
         let block = common::test_utils::produce_dummy_block(2, Some(prev_hash), vec![transfer_tx]);
 
         let control_hash1 = block.header.hash;
@@ -432,7 +440,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 1, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 1, to, 1, &sign_key);
         let block = common::test_utils::produce_dummy_block(3, Some(prev_hash), vec![transfer_tx]);
 
         let control_hash2 = block.header.hash;
@@ -443,7 +452,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 2, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 2, to, 1, &sign_key);
 
         let control_tx_hash1 = transfer_tx.hash();
 
@@ -454,7 +464,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 3, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 3, to, 1, &sign_key);
 
         let control_tx_hash2 = transfer_tx.hash();
 
@@ -479,14 +490,23 @@ mod tests {
 
         let mut block_res = vec![];
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
+
+        let from = acc1();
+        let to = acc2();
+        let sign_key = acc1_sign_key();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 0, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 0, to, 1, &sign_key);
         let block = common::test_utils::produce_dummy_block(2, Some(prev_hash), vec![transfer_tx]);
 
         block_res.push(block.clone());
@@ -496,7 +516,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 1, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 1, to, 1, &sign_key);
         let block = common::test_utils::produce_dummy_block(3, Some(prev_hash), vec![transfer_tx]);
 
         block_res.push(block.clone());
@@ -506,7 +527,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 2, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 2, to, 1, &sign_key);
 
         let block = common::test_utils::produce_dummy_block(4, Some(prev_hash), vec![transfer_tx]);
         block_res.push(block.clone());
@@ -516,7 +538,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 3, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 3, to, 1, &sign_key);
 
         let block = common::test_utils::produce_dummy_block(5, Some(prev_hash), vec![transfer_tx]);
         block_res.push(block.clone());
@@ -563,8 +586,16 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let temdir_path = temp_dir.path();
 
-        let dbio =
-            RocksDBIO::open_or_create(temdir_path, &genesis_block(), &initial_state()).unwrap();
+        let dbio = RocksDBIO::open_or_create(
+            temdir_path,
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
+        )
+        .unwrap();
+
+        let from = acc1();
+        let to = acc2();
+        let sign_key = acc1_sign_key();
 
         let mut tx_hash_res = vec![];
 
@@ -572,8 +603,10 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx1 = transfer(1, 0, true);
-        let transfer_tx2 = transfer(1, 1, true);
+        let transfer_tx1 =
+            common::test_utils::create_transaction_native_token_transfer(from, 0, to, 1, &sign_key);
+        let transfer_tx2 =
+            common::test_utils::create_transaction_native_token_transfer(from, 1, to, 1, &sign_key);
         tx_hash_res.push(transfer_tx1.hash().0);
         tx_hash_res.push(transfer_tx2.hash().0);
 
@@ -589,8 +622,10 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx1 = transfer(1, 2, true);
-        let transfer_tx2 = transfer(1, 3, true);
+        let transfer_tx1 =
+            common::test_utils::create_transaction_native_token_transfer(from, 2, to, 1, &sign_key);
+        let transfer_tx2 =
+            common::test_utils::create_transaction_native_token_transfer(from, 3, to, 1, &sign_key);
         tx_hash_res.push(transfer_tx1.hash().0);
         tx_hash_res.push(transfer_tx2.hash().0);
 
@@ -606,8 +641,10 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx1 = transfer(1, 4, true);
-        let transfer_tx2 = transfer(1, 5, true);
+        let transfer_tx1 =
+            common::test_utils::create_transaction_native_token_transfer(from, 4, to, 1, &sign_key);
+        let transfer_tx2 =
+            common::test_utils::create_transaction_native_token_transfer(from, 5, to, 1, &sign_key);
         tx_hash_res.push(transfer_tx1.hash().0);
         tx_hash_res.push(transfer_tx2.hash().0);
 
@@ -623,7 +660,8 @@ mod tests {
         let last_block = dbio.get_block(last_id).unwrap();
 
         let prev_hash = last_block.header.hash;
-        let transfer_tx = transfer(1, 6, true);
+        let transfer_tx =
+            common::test_utils::create_transaction_native_token_transfer(from, 6, to, 1, &sign_key);
         tx_hash_res.push(transfer_tx.hash().0);
 
         let block = common::test_utils::produce_dummy_block(5, Some(prev_hash), vec![transfer_tx]);

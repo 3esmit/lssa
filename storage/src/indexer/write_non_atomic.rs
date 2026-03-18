@@ -1,5 +1,10 @@
-use super::*;
+use super::{
+    BREAKPOINT_INTERVAL, DB_META_FIRST_BLOCK_SET_KEY, DB_META_LAST_BLOCK_IN_DB_KEY,
+    DB_META_LAST_BREAKPOINT_ID, DB_META_LAST_OBSERVED_L1_LIB_HEADER_ID_IN_DB_KEY, DbError,
+    DbResult, RocksDBIO, V02State,
+};
 
+#[expect(clippy::multiple_inherent_impl, reason = "Readability")]
 impl RocksDBIO {
     // Meta
 
@@ -88,7 +93,7 @@ impl RocksDBIO {
                         Some("Failed to serialize DB_META_FIRST_BLOCK_SET_KEY".to_owned()),
                     )
                 })?,
-                [1u8; 1],
+                [1_u8; 1],
             )
             .map_err(|rerr| DbError::rocksdb_cast_message(rerr, None))?;
         Ok(())
@@ -120,7 +125,10 @@ impl RocksDBIO {
 
     pub fn put_next_breakpoint(&self) -> DbResult<()> {
         let last_block = self.get_meta_last_block_in_db()?;
-        let next_breakpoint_id = self.get_meta_last_breakpoint_id()? + 1;
+        let next_breakpoint_id = self
+            .get_meta_last_breakpoint_id()?
+            .checked_add(1)
+            .expect("Breakpoint Id will be lesser than u64::MAX");
         let block_to_break_id = next_breakpoint_id
             .checked_mul(u64::from(BREAKPOINT_INTERVAL))
             .expect("Reached maximum breakpoint id");

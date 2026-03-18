@@ -2,8 +2,13 @@ use std::collections::HashMap;
 
 use rocksdb::WriteBatch;
 
-use super::*;
+use super::{
+    Arc, BREAKPOINT_INTERVAL, Block, BoundColumnFamily, DB_META_FIRST_BLOCK_IN_DB_KEY,
+    DB_META_FIRST_BLOCK_SET_KEY, DB_META_LAST_BLOCK_IN_DB_KEY, DB_META_LAST_BREAKPOINT_ID,
+    DB_META_LAST_OBSERVED_L1_LIB_HEADER_ID_IN_DB_KEY, DbError, DbResult, RocksDBIO,
+};
 
+#[expect(clippy::multiple_inherent_impl, reason = "Readability")]
 impl RocksDBIO {
     // Accounts meta
 
@@ -36,14 +41,16 @@ impl RocksDBIO {
     pub fn put_account_transactions(
         &self,
         acc_id: [u8; 32],
-        tx_hashes: Vec<[u8; 32]>,
+        tx_hashes: &[[u8; 32]],
     ) -> DbResult<()> {
         let acc_num_tx = self.get_acc_meta_num_tx(acc_id)?.unwrap_or(0);
         let cf_att = self.account_id_to_tx_hash_column();
         let mut write_batch = WriteBatch::new();
 
         for (tx_id, tx_hash) in tx_hashes.iter().enumerate() {
-            let put_id = acc_num_tx + tx_id as u64;
+            let put_id = acc_num_tx
+                .checked_add(tx_id.try_into().expect("Must fit into u64"))
+                .expect("Tx count should be lesser that u64::MAX");
 
             let mut prefix = borsh::to_vec(&acc_id).map_err(|berr| {
                 DbError::borsh_cast_message(berr, Some("Failed to serialize account id".to_owned()))
@@ -68,7 +75,9 @@ impl RocksDBIO {
 
         self.update_acc_meta_batch(
             acc_id,
-            acc_num_tx + (tx_hashes.len() as u64),
+            acc_num_tx
+                .checked_add(tx_hashes.len().try_into().expect("Must fit into u64"))
+                .expect("Tx count should be lesser that u64::MAX"),
             &mut write_batch,
         )?;
 
@@ -80,14 +89,16 @@ impl RocksDBIO {
     pub fn put_account_transactions_dependant(
         &self,
         acc_id: [u8; 32],
-        tx_hashes: Vec<[u8; 32]>,
+        tx_hashes: &[[u8; 32]],
         write_batch: &mut WriteBatch,
     ) -> DbResult<()> {
         let acc_num_tx = self.get_acc_meta_num_tx(acc_id)?.unwrap_or(0);
         let cf_att = self.account_id_to_tx_hash_column();
 
         for (tx_id, tx_hash) in tx_hashes.iter().enumerate() {
-            let put_id = acc_num_tx + tx_id as u64;
+            let put_id = acc_num_tx
+                .checked_add(tx_id.try_into().expect("Must fit into u64"))
+                .expect("Tx count should be lesser that u64::MAX");
 
             let mut prefix = borsh::to_vec(&acc_id).map_err(|berr| {
                 DbError::borsh_cast_message(berr, Some("Failed to serialize account id".to_owned()))
@@ -110,7 +121,13 @@ impl RocksDBIO {
             );
         }
 
-        self.update_acc_meta_batch(acc_id, acc_num_tx + (tx_hashes.len() as u64), write_batch)?;
+        self.update_acc_meta_batch(
+            acc_id,
+            acc_num_tx
+                .checked_add(tx_hashes.len().try_into().expect("Must fit into u64"))
+                .expect("Tx count should be lesser that u64::MAX"),
+            write_batch,
+        )?;
 
         Ok(())
     }
@@ -226,7 +243,7 @@ impl RocksDBIO {
                     Some("Failed to serialize DB_META_FIRST_BLOCK_SET_KEY".to_owned()),
                 )
             })?,
-            [1u8; 1],
+            [1_u8; 1],
         );
         Ok(())
     }
@@ -286,14 +303,14 @@ impl RocksDBIO {
             let acc_ids = tx
                 .affected_public_account_ids()
                 .into_iter()
-                .map(|account_id| account_id.into_value())
+                .map(nssa::AccountId::into_value)
                 .collect::<Vec<_>>();
 
             for acc_id in acc_ids {
                 acc_to_tx_map
                     .entry(acc_id)
                     .and_modify(|tx_hashes| tx_hashes.push(tx_hash.into()))
-                    .or_insert(vec![tx_hash.into()]);
+                    .or_insert_with(|| vec![tx_hash.into()]);
             }
         }
 
@@ -302,7 +319,7 @@ impl RocksDBIO {
             reason = "RocksDB will keep ordering persistent"
         )]
         for (acc_id, tx_hashes) in acc_to_tx_map {
-            self.put_account_transactions_dependant(acc_id, tx_hashes, &mut write_batch)?;
+            self.put_account_transactions_dependant(acc_id, &tx_hashes, &mut write_batch)?;
         }
 
         self.db.write(write_batch).map_err(|rerr| {

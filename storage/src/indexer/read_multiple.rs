@@ -1,7 +1,8 @@
 use common::transaction::NSSATransaction;
 
-use super::*;
+use super::{Block, DbError, DbResult, RocksDBIO};
 
+#[expect(clippy::multiple_inherent_impl, reason = "Readability")]
 impl RocksDBIO {
     pub fn get_block_batch(&self, before: Option<u64>, limit: u64) -> DbResult<Vec<Block>> {
         let mut seq = vec![];
@@ -25,11 +26,11 @@ impl RocksDBIO {
         self.get_block_batch_seq(seq.into_iter())
     }
 
-    /// Get block batch from a sequence
+    /// Get block batch from a sequence.
     ///
-    /// Currently assumes non-decreasing sequence
+    /// Currently assumes non-decreasing sequence.
     ///
-    /// ToDo: Add suport of arbitrary sequences
+    /// `ToDo`: Add suport of arbitrary sequences.
     pub fn get_block_batch_seq(&self, seq: impl Iterator<Item = u64>) -> DbResult<Vec<Block>> {
         let cf_block = self.block_column();
 
@@ -72,11 +73,9 @@ impl RocksDBIO {
         Ok(block_batch)
     }
 
-    /// Get block ids by txs
+    /// Get block ids by txs.
     ///
-    /// Transactions must be sorted by time of arrival
-    ///
-    /// ToDo: There may be multiple transactions in one block
+    /// `ToDo`: There may be multiple transactions in one block
     /// so this method can take redundant reads.
     /// Need to update signature and implementation.
     fn get_block_ids_by_tx_vec(&self, tx_vec: &[[u8; 32]]) -> DbResult<Vec<u64>> {
@@ -98,18 +97,21 @@ impl RocksDBIO {
         // Keys parsing
         let mut block_id_batch = vec![];
         for res in multi_get_res {
-            let res = res.map_err(|rerr| DbError::rocksdb_cast_message(rerr, None))?;
+            let res = res
+                .map_err(|rerr| DbError::rocksdb_cast_message(rerr, None))?
+                .ok_or_else(|| {
+                    DbError::db_interaction_error(
+                        "Tx to block id mapping do not contain transaction from vec".to_owned(),
+                    )
+                })?;
 
-            let block_id = if let Some(data) = res {
-                Ok(borsh::from_slice::<u64>(&data).map_err(|serr| {
+            let block_id = {
+                Ok(borsh::from_slice::<u64>(&res).map_err(|serr| {
                     DbError::borsh_cast_message(
                         serr,
                         Some("Failed to deserialize block id".to_owned()),
                     )
                 })?)
-            } else {
-                // Block not found, assuming that previous one was the last
-                break;
             }?;
 
             block_id_batch.push(block_id);
@@ -131,7 +133,11 @@ impl RocksDBIO {
 
         // Keys preparation
         let mut keys = vec![];
-        for tx_id in offset..(offset + limit) {
+        for tx_id in offset
+            ..offset
+                .checked_add(limit)
+                .expect("Transaction limit should be lesser than u64::MAX")
+        {
             let mut prefix = borsh::to_vec(&acc_id).map_err(|berr| {
                 DbError::borsh_cast_message(berr, Some("Failed to serialize account id".to_owned()))
             })?;
@@ -188,10 +194,12 @@ impl RocksDBIO {
                 .transactions
                 .iter()
                 .find(|tx| tx.hash().0 == tx_hash)
-                .ok_or(DbError::db_interaction_error(format!(
-                    "Missing transaction in block {} with hash {:#?}",
-                    block.header.block_id, tx_hash
-                )))?;
+                .ok_or_else(|| {
+                    DbError::db_interaction_error(format!(
+                        "Missing transaction in block {} with hash {:#?}",
+                        block.header.block_id, tx_hash
+                    ))
+                })?;
 
             tx_batch.push(transaction.clone());
         }

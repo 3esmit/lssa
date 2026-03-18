@@ -1,5 +1,8 @@
 use leptos::prelude::*;
-use leptos_router::hooks::{use_navigate, use_query_map};
+use leptos_router::{
+    NavigateOptions,
+    hooks::{use_navigate, use_query_map},
+};
 use web_sys::SubmitEvent;
 
 use crate::{
@@ -33,41 +36,79 @@ pub fn MainPage() -> impl IntoView {
         match api::search(query).await {
             Ok(result) => Some(result),
             Err(e) => {
-                log::error!("Search error: {}", e);
+                log::error!("Search error: {e}");
                 None
             }
         }
     });
 
+    // Pagination state for blocks
+    let (all_blocks, set_all_blocks) = signal(Vec::new());
+    let (is_loading_blocks, set_is_loading_blocks) = signal(false);
+    let (has_more_blocks, set_has_more_blocks) = signal(true);
+    let (oldest_loaded_block_id, set_oldest_loaded_block_id) = signal(None::<u64>);
+
     // Load recent blocks on mount
     let recent_blocks_resource = Resource::new(
         || (),
-        |_| async {
-            match api::get_latest_block_id().await {
-                Ok(last_id) => {
-                    api::get_blocks(
-                        std::cmp::max(last_id.saturating_sub(RECENT_BLOCKS_LIMIT) as u32, 1),
-                        (RECENT_BLOCKS_LIMIT + 1) as u32,
-                    )
-                    .await
-                }
-                Err(err) => Err(err),
-            }
-        },
+        |()| async { api::get_blocks(None, RECENT_BLOCKS_LIMIT).await },
     );
+
+    // Update all_blocks when initial load completes
+    Effect::new(move || {
+        if let Some(Ok(blocks)) = recent_blocks_resource.get() {
+            let oldest_id = blocks.last().map(|b| b.header.block_id);
+            set_all_blocks.set(blocks.clone());
+            set_oldest_loaded_block_id.set(oldest_id);
+            set_has_more_blocks.set(
+                u64::try_from(blocks.len()).expect("usize should fit in u64")
+                    == RECENT_BLOCKS_LIMIT
+                    && oldest_id.unwrap_or(0) > 1,
+            );
+        }
+    });
+
+    // Load more blocks handler
+    let load_more_blocks = move |_| {
+        let before_id = oldest_loaded_block_id.get();
+
+        if before_id.is_none() {
+            return;
+        }
+
+        set_is_loading_blocks.set(true);
+
+        leptos::task::spawn_local(async move {
+            match api::get_blocks(before_id, RECENT_BLOCKS_LIMIT).await {
+                Ok(new_blocks) => {
+                    let blocks_count =
+                        u64::try_from(new_blocks.len()).expect("usize should fit in u64");
+                    let new_oldest_id = new_blocks.last().map(|b| b.header.block_id);
+                    set_all_blocks.update(|blocks| blocks.extend(new_blocks));
+                    set_oldest_loaded_block_id.set(new_oldest_id);
+                    set_has_more_blocks
+                        .set(blocks_count == RECENT_BLOCKS_LIMIT && new_oldest_id.unwrap_or(0) > 1);
+                }
+                Err(e) => {
+                    log::error!("Failed to load more blocks: {e}");
+                }
+            }
+            set_is_loading_blocks.set(false);
+        });
+    };
 
     // Handle search - update URL parameter
     let on_search = move |ev: SubmitEvent| {
         ev.prevent_default();
         let query = search_query.get();
         if query.is_empty() {
-            navigate("?", Default::default());
+            navigate("?", NavigateOptions::default());
             return;
         }
 
         navigate(
             &format!("?q={}", urlencoding::encode(&query)),
-            Default::default(),
+            NavigateOptions::default(),
         );
     };
 
@@ -108,78 +149,78 @@ pub fn MainPage() -> impl IntoView {
                                 view! {
                                     <div class="search-results">
                                         <h2>"Search Results"</h2>
-                                        {if !has_results {
-                                            view! { <div class="not-found">"No results found"</div> }
-                                            .into_any()
-                                    } else {
-                                        view! {
-                                            <div class="results-container">
-                                                {if !blocks.is_empty() {
-                                                    view! {
-                                                        <div class="results-section">
-                                                            <h3>"Blocks"</h3>
-                                                            <div class="results-list">
-                                                                {blocks
-                                                                    .into_iter()
-                                                                    .map(|block| {
-                                                                        view! { <BlockPreview block=block /> }
-                                                                    })
-                                                                    .collect::<Vec<_>>()}
+                                        {if has_results {
+                                            view! {
+                                                <div class="results-container">
+                                                    {if blocks.is_empty() {
+                                                        ().into_any()
+                                                    } else {
+                                                        view! {
+                                                            <div class="results-section">
+                                                                <h3>"Blocks"</h3>
+                                                                <div class="results-list">
+                                                                    {blocks
+                                                                        .into_iter()
+                                                                        .map(|block| {
+                                                                            view! { <BlockPreview block=block /> }
+                                                                        })
+                                                                        .collect::<Vec<_>>()}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    }
-                                                        .into_any()
-                                                } else {
-                                                    ().into_any()
-                                                }}
+                                                        }
+                                                            .into_any()
+                                                    }}
 
-                                                {if !transactions.is_empty() {
-                                                    view! {
-                                                        <div class="results-section">
-                                                            <h3>"Transactions"</h3>
-                                                            <div class="results-list">
-                                                                {transactions
-                                                                    .into_iter()
-                                                                    .map(|tx| {
-                                                                        view! { <TransactionPreview transaction=tx /> }
-                                                                    })
-                                                                    .collect::<Vec<_>>()}
+                                                    {if transactions.is_empty() {
+                                                        ().into_any()
+                                                    } else {
+                                                        view! {
+                                                            <div class="results-section">
+                                                                <h3>"Transactions"</h3>
+                                                                <div class="results-list">
+                                                                    {transactions
+                                                                        .into_iter()
+                                                                        .map(|tx| {
+                                                                            view! { <TransactionPreview transaction=tx /> }
+                                                                        })
+                                                                        .collect::<Vec<_>>()}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    }
-                                                        .into_any()
-                                                } else {
-                                                    ().into_any()
-                                                }}
+                                                        }
+                                                            .into_any()
+                                                    }}
 
-                                                {if !accounts.is_empty() {
-                                                    view! {
-                                                        <div class="results-section">
-                                                            <h3>"Accounts"</h3>
-                                                            <div class="results-list">
-                                                                {accounts
-                                                                    .into_iter()
-                                                                    .map(|(id, account)| {
-                                                                        view! {
-                                                                            <AccountPreview
-                                                                                account_id=id
-                                                                                account=account
-                                                                            />
-                                                                        }
-                                                                    })
-                                                                    .collect::<Vec<_>>()}
+                                                    {if accounts.is_empty() {
+                                                        ().into_any()
+                                                    } else {
+                                                        view! {
+                                                            <div class="results-section">
+                                                                <h3>"Accounts"</h3>
+                                                                <div class="results-list">
+                                                                    {accounts
+                                                                        .into_iter()
+                                                                        .map(|(id, account)| {
+                                                                            view! {
+                                                                                <AccountPreview
+                                                                                    account_id=id
+                                                                                    account=account
+                                                                                />
+                                                                            }
+                                                                        })
+                                                                        .collect::<Vec<_>>()}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    }
-                                                        .into_any()
-                                                } else {
-                                                    ().into_any()
-                                                }}
+                                                        }
+                                                            .into_any()
+                                                    }}
 
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }}
+                                                </div>
+                                            }
+                                                .into_any()
+                                        } else {
+                                                view! { <div class="not-found">"No results found"</div> }
+                                                .into_any()
+                                        }}
                                 </div>
                             }
                                 .into_any()
@@ -196,22 +237,51 @@ pub fn MainPage() -> impl IntoView {
                         recent_blocks_resource
                             .get()
                             .map(|result| match result {
-                                Ok(blocks) if !blocks.is_empty() => {
-                                    view! {
-                                        <div class="blocks-list">
-                                            {blocks
-                                                .into_iter()
-                                                .map(|block| view! { <BlockPreview block=block /> })
-                                                .collect::<Vec<_>>()}
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
                                 Ok(_) => {
-                                    view! { <div class="no-blocks">"No blocks found"</div> }.into_any()
+                                    let blocks = all_blocks.get();
+                                    if blocks.is_empty() {
+                                        view! { <div class="no-blocks">"No blocks found"</div> }
+                                            .into_any()
+                                    } else {
+                                        view! {
+                                            <div>
+                                                <div class="blocks-list">
+                                                    {blocks
+                                                        .into_iter()
+                                                        .map(|block| view! { <BlockPreview block=block /> })
+                                                        .collect::<Vec<_>>()}
+                                                </div>
+                                                {move || {
+                                                    if has_more_blocks.get() {
+                                                        view! {
+                                                            <button
+                                                                class="load-more-button"
+                                                                on:click=load_more_blocks
+                                                                disabled=move || is_loading_blocks.get()
+                                                            >
+                                                                {move || {
+                                                                    if is_loading_blocks.get() {
+                                                                        "Loading..."
+                                                                    } else {
+                                                                        "Load More"
+                                                                    }
+                                                                }}
+
+                                                            </button>
+                                                        }
+                                                            .into_any()
+                                                    } else {
+                                                        ().into_any()
+                                                    }
+                                                }}
+
+                                            </div>
+                                        }
+                                            .into_any()
+                                    }
                                 }
                                 Err(e) => {
-                                    view! { <div class="error">{format!("Error: {}", e)}</div> }
+                                    view! { <div class="error">{format!("Error: {e}")}</div> }
                                         .into_any()
                                 }
                             })

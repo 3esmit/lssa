@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use bedrock_client::HeaderId;
 use common::{
-    block::{BedrockStatus, Block},
+    block::{BedrockStatus, Block, BlockId},
     transaction::NSSATransaction,
 };
 use nssa::{Account, AccountId, V02State};
@@ -23,20 +23,16 @@ impl IndexerStore {
     /// ATTENTION: Will overwrite genesis block.
     pub fn open_db_with_genesis(
         location: &Path,
-        start_data: Option<(Block, V02State)>,
+        genesis_block: &Block,
+        initial_state: &V02State,
     ) -> Result<Self> {
-        let dbio = RocksDBIO::open_or_create(location, start_data)?;
+        let dbio = RocksDBIO::open_or_create(location, genesis_block, initial_state)?;
         let current_state = dbio.final_state()?;
 
         Ok(Self {
             dbio: Arc::new(dbio),
             current_state: Arc::new(RwLock::new(current_state)),
         })
-    }
-
-    /// Reopening existing database
-    pub fn open_db_restart(location: &Path) -> Result<Self> {
-        Self::open_db_with_genesis(location, None)
     }
 
     pub fn last_observed_l1_lib_header(&self) -> Result<Option<HeaderId>> {
@@ -54,8 +50,8 @@ impl IndexerStore {
         Ok(self.dbio.get_block(id)?)
     }
 
-    pub fn get_block_batch(&self, offset: u64, limit: u64) -> Result<Vec<Block>> {
-        Ok(self.dbio.get_block_batch(offset, limit)?)
+    pub fn get_block_batch(&self, before: Option<BlockId>, limit: u64) -> Result<Vec<Block>> {
+        Ok(self.dbio.get_block_batch(before, limit)?)
     }
 
     pub fn get_transaction_by_hash(&self, tx_hash: [u8; 32]) -> Result<NSSATransaction> {
@@ -83,12 +79,14 @@ impl IndexerStore {
         Ok(self.dbio.get_acc_transactions(acc_id, offset, limit)?)
     }
 
+    #[must_use]
     pub fn genesis_id(&self) -> u64 {
         self.dbio
             .get_meta_first_block_in_db()
             .expect("Must be set at the DB startup")
     }
 
+    #[must_use]
     pub fn last_block(&self) -> u64 {
         self.dbio
             .get_meta_last_block_in_db()
@@ -99,9 +97,9 @@ impl IndexerStore {
         Ok(self.dbio.calculate_state_for_id(block_id)?)
     }
 
-    /// Recalculation of final state directly from DB
+    /// Recalculation of final state directly from DB.
     ///
-    /// Used for indexer healthcheck
+    /// Used for indexer healthcheck.
     pub fn recalculate_final_state(&self) -> Result<V02State> {
         Ok(self.dbio.final_state()?)
     }
@@ -114,7 +112,7 @@ impl IndexerStore {
             .get_account_by_id(*account_id))
     }
 
-    pub async fn put_block(&mut self, mut block: Block, l1_header: HeaderId) -> Result<()> {
+    pub async fn put_block(&self, mut block: Block, l1_header: HeaderId) -> Result<()> {
         {
             let mut state_guard = self.current_state.write().await;
 
@@ -131,7 +129,7 @@ impl IndexerStore {
         // to represent correct block finality
         block.bedrock_status = BedrockStatus::Finalized;
 
-        Ok(self.dbio.put_block(block, l1_header.into())?)
+        Ok(self.dbio.put_block(&block, l1_header.into())?)
     }
 }
 
@@ -163,15 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn test_correct_startup() {
+    fn correct_startup() {
         let home = tempdir().unwrap();
 
         let storage = IndexerStore::open_db_with_genesis(
             home.as_ref(),
-            Some((
-                genesis_block(),
-                nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
-            )),
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
         )
         .unwrap();
 
@@ -183,15 +179,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_state_transition() {
+    async fn state_transition() {
         let home = tempdir().unwrap();
 
-        let mut storage = IndexerStore::open_db_with_genesis(
+        let storage = IndexerStore::open_db_with_genesis(
             home.as_ref(),
-            Some((
-                genesis_block(),
-                nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
-            )),
+            &genesis_block(),
+            &nssa::V02State::new_with_genesis_accounts(&[(acc1(), 10000), (acc2(), 20000)], &[]),
         )
         .unwrap();
 
@@ -207,15 +201,15 @@ mod tests {
                 i - 2,
                 to,
                 10,
-                sign_key.clone(),
+                &sign_key,
             );
 
             let next_block =
-                common::test_utils::produce_dummy_block(i as u64, Some(prev_hash), vec![tx]);
+                common::test_utils::produce_dummy_block(u64::try_from(i).unwrap(), Some(prev_hash), vec![tx]);
             prev_hash = next_block.header.hash;
 
             storage
-                .put_block(next_block, HeaderId::from([i as u8; 32]))
+                .put_block(next_block, HeaderId::from([u8::try_from(i).unwrap(); 32]))
                 .await
                 .unwrap();
         }

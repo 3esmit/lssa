@@ -42,14 +42,18 @@ pub trait Rpc {
     async fn get_transaction(&self, tx_hash: HashType) -> Result<Transaction, ErrorObjectOwned>;
 
     #[method(name = "getBlocks")]
-    async fn get_blocks(&self, offset: u32, limit: u32) -> Result<Vec<Block>, ErrorObjectOwned>;
+    async fn get_blocks(
+        &self,
+        before: Option<BlockId>,
+        limit: u64,
+    ) -> Result<Vec<Block>, ErrorObjectOwned>;
 
     #[method(name = "getTransactionsByAccount")]
     async fn get_transactions_by_account(
         &self,
         account_id: AccountId,
-        limit: u32,
-        offset: u32,
+        offset: u64,
+        limit: u64,
     ) -> Result<Vec<Transaction>, ErrorObjectOwned>;
 
     // ToDo: expand healthcheck response into some kind of report

@@ -33,62 +33,6 @@ impl Default for SequencerPartialConfig {
     }
 }
 
-pub fn sequencer_config(
-    partial: SequencerPartialConfig,
-    home: PathBuf,
-    bedrock_addr: SocketAddr,
-    indexer_addr: SocketAddr,
-    initial_data: &InitialData,
-) -> Result<SequencerConfig> {
-    let SequencerPartialConfig {
-        max_num_tx_in_block,
-        max_block_size,
-        mempool_max_size,
-        block_create_timeout,
-    } = partial;
-
-    Ok(SequencerConfig {
-        home,
-        override_rust_log: None,
-        genesis_id: 1,
-        is_genesis_random: true,
-        max_num_tx_in_block,
-        max_block_size,
-        mempool_max_size,
-        block_create_timeout,
-        retry_pending_blocks_timeout: Duration::from_secs(120),
-        port: 0,
-        initial_accounts: initial_data.sequencer_initial_accounts(),
-        initial_commitments: initial_data.sequencer_initial_commitments(),
-        signing_key: [37; 32],
-        bedrock_config: BedrockConfig {
-            channel_id: bedrock_channel_id(),
-            node_url: addr_to_url(UrlProtocol::Http, bedrock_addr)
-                .context("Failed to convert bedrock addr to URL")?,
-            auth: None,
-        },
-        indexer_rpc_url: addr_to_url(UrlProtocol::Ws, indexer_addr)
-            .context("Failed to convert indexer addr to URL")?,
-    })
-}
-
-pub fn wallet_config(
-    sequencer_addr: SocketAddr,
-    initial_data: &InitialData,
-) -> Result<WalletConfig> {
-    Ok(WalletConfig {
-        override_rust_log: None,
-        sequencer_addr: addr_to_url(UrlProtocol::Http, sequencer_addr)
-            .context("Failed to convert sequencer addr to URL")?,
-        seq_poll_timeout: Duration::from_secs(30),
-        seq_tx_poll_max_blocks: 15,
-        seq_poll_max_retries: 10,
-        seq_block_poll_max_amount: 100,
-        initial_accounts: initial_data.wallet_initial_accounts(),
-        basic_auth: None,
-    })
-}
-
 pub struct InitialData {
     pub public_accounts: Vec<(PrivateKey, u128)>,
     pub private_accounts: Vec<(KeyChain, Account)>,
@@ -218,6 +162,62 @@ impl std::fmt::Display for UrlProtocol {
             Self::Ws => write!(f, "ws"),
         }
     }
+}
+
+pub fn sequencer_config(
+    partial: SequencerPartialConfig,
+    home: PathBuf,
+    bedrock_addr: SocketAddr,
+    indexer_addr: SocketAddr,
+    initial_data: &InitialData,
+) -> Result<SequencerConfig> {
+    let SequencerPartialConfig {
+        max_num_tx_in_block,
+        max_block_size,
+        mempool_max_size,
+        block_create_timeout,
+    } = partial;
+
+    Ok(SequencerConfig {
+        home,
+        override_rust_log: None,
+        genesis_id: 1,
+        is_genesis_random: true,
+        max_num_tx_in_block,
+        max_block_size,
+        mempool_max_size,
+        block_create_timeout,
+        retry_pending_blocks_timeout: Duration::from_secs(120),
+        port: 0,
+        initial_accounts: initial_data.sequencer_initial_accounts(),
+        initial_commitments: initial_data.sequencer_initial_commitments(),
+        signing_key: [37; 32],
+        bedrock_config: BedrockConfig {
+            channel_id: bedrock_channel_id(),
+            node_url: addr_to_url(UrlProtocol::Http, bedrock_addr)
+                .context("Failed to convert bedrock addr to URL")?,
+            auth: None,
+        },
+        indexer_rpc_url: addr_to_url(UrlProtocol::Ws, indexer_addr)
+            .context("Failed to convert indexer addr to URL")?,
+    })
+}
+
+pub fn wallet_config(
+    sequencer_addr: SocketAddr,
+    initial_data: &InitialData,
+) -> Result<WalletConfig> {
+    Ok(WalletConfig {
+        override_rust_log: None,
+        sequencer_addr: addr_to_url(UrlProtocol::Http, sequencer_addr)
+            .context("Failed to convert sequencer addr to URL")?,
+        seq_poll_timeout: Duration::from_secs(30),
+        seq_tx_poll_max_blocks: 15,
+        seq_poll_max_retries: 10,
+        seq_block_poll_max_amount: 100,
+        initial_accounts: initial_data.wallet_initial_accounts(),
+        basic_auth: None,
+    })
 }
 
 pub fn indexer_config(

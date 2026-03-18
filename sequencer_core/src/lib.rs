@@ -658,7 +658,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_build_block_from_mempool() {
+    async fn build_block_from_mempool() {
         let (mut sequencer, mempool_handle) = common_setup().await;
         let genesis_height = sequencer.chain_height;
 

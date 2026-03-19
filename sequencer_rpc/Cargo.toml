@@ -13,7 +13,6 @@ common.workspace = true
 mempool.workspace = true
 sequencer_core = { workspace = true }
 bedrock_client.workspace = true
-key_protocol.workspace = true
 testnet_initial_state.workspace = true
 
 anyhow.workspace = true

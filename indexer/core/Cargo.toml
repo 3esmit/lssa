@@ -13,7 +13,6 @@ bedrock_client.workspace = true
 nssa.workspace = true
 nssa_core.workspace = true
 storage.workspace = true
-key_protocol.workspace = true
 testnet_initial_state.workspace = true
 
 anyhow.workspace = true

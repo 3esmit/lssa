@@ -14,7 +14,6 @@ common.workspace = true
 storage.workspace = true
 mempool.workspace = true
 bedrock_client.workspace = true
-key_protocol.workspace = true
 testnet_initial_state.workspace = true
 
 anyhow.workspace = true

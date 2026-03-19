@@ -1,13 +1,15 @@
 use std::{path::Path, sync::Arc};
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use common::block::Block;
 use nssa::V02State;
 use rocksdb::{
-    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, MultiThreaded, Options,
+    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, MultiThreaded, Options, WriteBatch,
 };
 
 use crate::error::DbError;
 
+pub mod meta_cells;
 pub mod read_multiple;
 pub mod read_once;
 pub mod write_atomic;
@@ -59,6 +61,97 @@ pub type DbResult<T> = Result<T, DbError>;
 
 pub struct RocksDBIO {
     pub db: DBWithThreadMode<MultiThreaded>,
+}
+
+pub trait SimpleStorableCell: BorshSerialize + BorshDeserialize {
+    const CF_NAME: &'static str;
+    const CELL_NAME: &'static str;
+
+    fn key_constructor() -> DbResult<Vec<u8>>;
+    fn value_constructor(&self) -> DbResult<Vec<u8>>;
+
+    fn column_ref(db: &RocksDBIO) -> Arc<BoundColumnFamily<'_>> {
+        db.db
+            .cf_handle(Self::CF_NAME)
+            .expect(format!("Column family {:?} must be present", Self::CF_NAME).as_str())
+    }
+
+    fn get(db: &RocksDBIO) -> DbResult<Self> {
+        let cf_ref = Self::column_ref(db);
+        let res = db
+            .db
+            .get_cf(&cf_ref, Self::key_constructor()?)
+            .map_err(|rerr| {
+                DbError::rocksdb_cast_message(
+                    rerr,
+                    Some(format!("Failed to read {:?}", Self::CELL_NAME)),
+                )
+            })?;
+
+        if let Some(data) = res {
+            Ok(borsh::from_slice::<Self>(&data).map_err(|err| {
+                DbError::borsh_cast_message(
+                    err,
+                    Some(format!("Failed to deserialize {:?}", Self::CELL_NAME)),
+                )
+            })?)
+        } else {
+            Err(DbError::db_interaction_error(format!(
+                "{:?} not found",
+                Self::CELL_NAME
+            )))
+        }
+    }
+
+    fn get_opt(db: &RocksDBIO) -> DbResult<Option<Self>> {
+        let cf_ref = Self::column_ref(db);
+        let res = db
+            .db
+            .get_cf(&cf_ref, Self::key_constructor()?)
+            .map_err(|rerr| {
+                DbError::rocksdb_cast_message(
+                    rerr,
+                    Some(format!("Failed to read {:?}", Self::CELL_NAME)),
+                )
+            })?;
+
+        res.map(|data| {
+            borsh::from_slice::<Self>(&data).map_err(|err| {
+                DbError::borsh_cast_message(
+                    err,
+                    Some(format!("Failed to deserialize {:?}", Self::CELL_NAME)),
+                )
+            })
+        })
+        .transpose()
+    }
+
+    fn put(&self, db: &RocksDBIO) -> DbResult<()> {
+        let cf_meta = db.meta_column();
+        db.db
+            .put_cf(
+                &cf_meta,
+                Self::key_constructor()?,
+                self.value_constructor()?,
+            )
+            .map_err(|rerr| {
+                DbError::rocksdb_cast_message(
+                    rerr,
+                    Some(format!("Failed to write {:?}", Self::CELL_NAME)),
+                )
+            })?;
+        Ok(())
+    }
+
+    fn put_batch(&self, db: &RocksDBIO, write_batch: &mut WriteBatch) -> DbResult<()> {
+        let cf_meta = db.meta_column();
+        write_batch.put_cf(
+            &cf_meta,
+            Self::key_constructor()?,
+            self.value_constructor()?,
+        );
+        Ok(())
+    }
 }
 
 impl RocksDBIO {
@@ -156,6 +249,32 @@ impl RocksDBIO {
         self.db
             .cf_handle(CF_ACC_META)
             .expect("Account meta column should exist")
+    }
+
+    // Generics
+
+    #[allow(unused)]
+    fn get<T: SimpleStorableCell>(&self) -> DbResult<T> {
+        T::get(&self)
+    }
+
+    #[allow(unused)]
+    fn get_opt<T: SimpleStorableCell>(&self) -> DbResult<Option<T>> {
+        T::get_opt(&self)
+    }
+
+    #[allow(unused)]
+    fn put<T: SimpleStorableCell>(&self, cell: T) -> DbResult<()> {
+        cell.put(&self)
+    }
+
+    #[allow(unused)]
+    fn put_batch<T: SimpleStorableCell>(
+        &self,
+        cell: T,
+        write_batch: &mut WriteBatch,
+    ) -> DbResult<()> {
+        cell.put_batch(&self, write_batch)
     }
 
     // State

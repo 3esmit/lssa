@@ -4,9 +4,10 @@ use rocksdb::WriteBatch;
 
 use super::{
     Arc, BREAKPOINT_INTERVAL, Block, BoundColumnFamily, DB_META_FIRST_BLOCK_IN_DB_KEY,
-    DB_META_FIRST_BLOCK_SET_KEY, DB_META_LAST_BLOCK_IN_DB_KEY, DB_META_LAST_BREAKPOINT_ID,
+    DB_META_FIRST_BLOCK_SET_KEY, DB_META_LAST_BREAKPOINT_ID,
     DB_META_LAST_OBSERVED_L1_LIB_HEADER_ID_IN_DB_KEY, DbError, DbResult, RocksDBIO,
 };
+use crate::indexer::meta_cells::LastBlockCell;
 
 #[expect(clippy::multiple_inherent_impl, reason = "Readability")]
 impl RocksDBIO {
@@ -163,23 +164,7 @@ impl RocksDBIO {
         block_id: u64,
         write_batch: &mut WriteBatch,
     ) -> DbResult<()> {
-        let cf_meta = self.meta_column();
-        write_batch.put_cf(
-            &cf_meta,
-            borsh::to_vec(&DB_META_LAST_BLOCK_IN_DB_KEY).map_err(|err| {
-                DbError::borsh_cast_message(
-                    err,
-                    Some("Failed to serialize DB_META_LAST_BLOCK_IN_DB_KEY".to_owned()),
-                )
-            })?,
-            borsh::to_vec(&block_id).map_err(|err| {
-                DbError::borsh_cast_message(
-                    err,
-                    Some("Failed to serialize last block id".to_owned()),
-                )
-            })?,
-        );
-        Ok(())
+        self.put_batch(LastBlockCell(block_id), write_batch)
     }
 
     pub fn put_meta_last_observed_l1_lib_header_in_db_batch(

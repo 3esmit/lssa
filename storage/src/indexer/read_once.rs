@@ -1,8 +1,8 @@
 use super::{
-    Block, DB_META_FIRST_BLOCK_IN_DB_KEY, DB_META_FIRST_BLOCK_SET_KEY,
-    DB_META_LAST_BLOCK_IN_DB_KEY, DB_META_LAST_BREAKPOINT_ID,
+    Block, DB_META_FIRST_BLOCK_IN_DB_KEY, DB_META_FIRST_BLOCK_SET_KEY, DB_META_LAST_BREAKPOINT_ID,
     DB_META_LAST_OBSERVED_L1_LIB_HEADER_ID_IN_DB_KEY, DbError, DbResult, RocksDBIO, V02State,
 };
+use crate::indexer::meta_cells::LastBlockCell;
 
 #[expect(clippy::multiple_inherent_impl, reason = "Readability")]
 impl RocksDBIO {
@@ -38,32 +38,7 @@ impl RocksDBIO {
     }
 
     pub fn get_meta_last_block_in_db(&self) -> DbResult<u64> {
-        let cf_meta = self.meta_column();
-        let res = self
-            .db
-            .get_cf(
-                &cf_meta,
-                borsh::to_vec(&DB_META_LAST_BLOCK_IN_DB_KEY).map_err(|err| {
-                    DbError::borsh_cast_message(
-                        err,
-                        Some("Failed to serialize DB_META_LAST_BLOCK_IN_DB_KEY".to_owned()),
-                    )
-                })?,
-            )
-            .map_err(|rerr| DbError::rocksdb_cast_message(rerr, None))?;
-
-        if let Some(data) = res {
-            Ok(borsh::from_slice::<u64>(&data).map_err(|err| {
-                DbError::borsh_cast_message(
-                    err,
-                    Some("Failed to deserialize last block".to_owned()),
-                )
-            })?)
-        } else {
-            Err(DbError::db_interaction_error(
-                "Last block not found".to_owned(),
-            ))
-        }
+        self.get::<LastBlockCell>().map(|cell| cell.0)
     }
 
     pub fn get_meta_last_observed_l1_lib_header_in_db(&self) -> DbResult<Option<[u8; 32]>> {

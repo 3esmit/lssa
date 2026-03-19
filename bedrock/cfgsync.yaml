@@ -3,10 +3,9 @@ n_hosts: 4
 timeout: 10
 
 faucet_settings:
-  enabled: true
+  enabled: false
 
-deployment_settings_storage_path:
-  deployment-settings.yaml
+deployment_settings_storage_path: deployment-settings.yaml
 
 entropy_file: /etc/logos-blockchain/test_entropy
 

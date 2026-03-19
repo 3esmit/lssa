@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     io::{BufReader, Write as _},
     path::Path,
-    str::FromStr as _,
     time::Duration,
 };
 
@@ -207,6 +206,28 @@ pub struct WalletConfig {
 
 impl Default for WalletConfig {
     fn default() -> Self {
+        let pub_sign_key1 = nssa::PrivateKey::try_new([
+            127, 39, 48, 152, 242, 91, 113, 230, 192, 5, 169, 81, 159, 38, 120, 218, 141, 28, 127,
+            1, 246, 162, 119, 120, 226, 217, 148, 138, 189, 249, 1, 251,
+        ])
+        .unwrap();
+        let public_key1 = nssa::PublicKey::new_from_private_key(&pub_sign_key1);
+        let public_account_id1 = nssa::AccountId::from(&public_key1);
+
+        let pub_sign_key2 = nssa::PrivateKey::try_new([
+            244, 52, 248, 116, 23, 32, 1, 69, 134, 174, 67, 53, 109, 42, 236, 98, 87, 218, 8, 98,
+            34, 246, 4, 221, 183, 93, 105, 115, 59, 134, 252, 76,
+        ])
+        .unwrap();
+        let public_key2 = nssa::PublicKey::new_from_private_key(&pub_sign_key2);
+        let public_account_id2 = nssa::AccountId::from(&public_key2);
+
+        let key_chain1 = KeyChain::new_mnemonic("default_private_account_1".to_owned());
+        let private_account_id1 = nssa::AccountId::from(&key_chain1.nullifier_public_key);
+
+        let key_chain2 = KeyChain::new_mnemonic("default_private_account_2".to_owned());
+        let private_account_id2 = nssa::AccountId::from(&key_chain2.nullifier_public_key);
+
         Self {
             sequencer_addr: "http://127.0.0.1:3040".parse().unwrap(),
             seq_poll_timeout: Duration::from_secs(12),
@@ -216,48 +237,28 @@ impl Default for WalletConfig {
             basic_auth: None,
             initial_accounts: vec![
                 InitialAccountData::Public(InitialAccountDataPublic {
-                    account_id: nssa::AccountId::from_str(
-                        "CbgR6tj5kWx5oziiFptM7jMvrQeYY3Mzaao6ciuhSr2r",
-                    )
-                    .unwrap(),
-                    pub_sign_key: nssa::PrivateKey::try_new([
-                        127, 39, 48, 152, 242, 91, 113, 230, 192, 5, 169, 81, 159, 38, 120, 218,
-                        141, 28, 127, 1, 246, 162, 119, 120, 226, 217, 148, 138, 189, 249, 1, 251,
-                    ])
-                    .unwrap(),
+                    account_id: public_account_id1,
+                    pub_sign_key: pub_sign_key1,
                 }),
                 InitialAccountData::Public(InitialAccountDataPublic {
-                    account_id: nssa::AccountId::from_str(
-                        "7wHg9sbJwc6h3NP1S9bekfAzB8CHifEcxKswCKUt3YQo",
-                    )
-                    .unwrap(),
-                    pub_sign_key: nssa::PrivateKey::try_new([
-                        244, 52, 248, 116, 23, 32, 1, 69, 134, 174, 67, 53, 109, 42, 236, 98, 87,
-                        218, 8, 98, 34, 246, 4, 221, 183, 93, 105, 115, 59, 134, 252, 76,
-                    ])
-                    .unwrap(),
+                    account_id: public_account_id2,
+                    pub_sign_key: pub_sign_key2,
                 }),
                 InitialAccountData::Private(Box::new(InitialAccountDataPrivate {
-                    account_id: nssa::AccountId::from_str(
-                        "HWkW5qd4XK3me6sCAb4bfPj462k33DjtKtEcYpuzNwB",
-                    )
-                    .unwrap(),
+                    account_id: private_account_id1,
                     account: nssa::Account {
                         balance: 10_000,
                         ..Default::default()
                     },
-                    key_chain: KeyChain::new_mnemonic("default_private_account_1".to_owned()),
+                    key_chain: key_chain1,
                 })),
                 InitialAccountData::Private(Box::new(InitialAccountDataPrivate {
-                    account_id: nssa::AccountId::from_str(
-                        "HUpbRQ1vEcZv5y6TDYv9tpt1VA64ji2v4RDLJfK2rpZn",
-                    )
-                    .unwrap(),
+                    account_id: private_account_id2,
                     account: nssa::Account {
                         balance: 20_000,
                         ..Default::default()
                     },
-                    key_chain: KeyChain::new_mnemonic("default_private_account_2".to_owned()),
+                    key_chain: key_chain2,
                 })),
             ],
         }

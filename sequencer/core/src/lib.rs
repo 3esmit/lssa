@@ -35,7 +35,7 @@ pub struct SequencerCore<
     BC: BlockSettlementClientTrait = BlockSettlementClient,
     IC: IndexerClientTrait = IndexerClient,
 > {
-    state: nssa::V02State,
+    state: nssa::V03State,
     store: SequencerStore,
     mempool: MemPool<NSSATransaction>,
     sequencer_config: SequencerConfig,
@@ -121,7 +121,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
                 .map(|acc_data| (acc_data.account_id, acc_data.balance))
                 .collect();
 
-            nssa::V02State::new_with_genesis_accounts(&init_accs, &initial_commitments)
+            nssa::V03State::new_with_genesis_accounts(&init_accs, &initial_commitments)
         };
 
         #[cfg(feature = "testnet")]
@@ -282,7 +282,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
         Ok((tx, msg_id))
     }
 
-    pub const fn state(&self) -> &nssa::V02State {
+    pub const fn state(&self) -> &nssa::V03State {
         &self.state
     }
 

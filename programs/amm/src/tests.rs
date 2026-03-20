@@ -5,7 +5,7 @@ use amm_core::{
     compute_pool_pda, compute_vault_pda, compute_vault_pda_seed,
 };
 use nssa::{
-    PrivateKey, PublicKey, PublicTransaction, V02State, program::Program, public_transaction,
+    PrivateKey, PublicKey, PublicTransaction, V03State, program::Program, public_transaction,
 };
 use nssa_core::{
     account::{Account, AccountId, AccountWithMetadata, Data},
@@ -2636,9 +2636,9 @@ fn new_definition_lp_symmetric_amounts() {
     assert_eq!(chained_call_lp, expected_lp_call);
 }
 
-fn state_for_amm_tests() -> V02State {
+fn state_for_amm_tests() -> V03State {
     let initial_data = [];
-    let mut state = V02State::new_with_genesis_accounts(&initial_data, &[]);
+    let mut state = V03State::new_with_genesis_accounts(&initial_data, &[]);
     state.force_insert_account(
         IdForExeTests::pool_definition_id(),
         AccountsForExeTests::pool_definition_init(),
@@ -2679,9 +2679,9 @@ fn state_for_amm_tests() -> V02State {
     state
 }
 
-fn state_for_amm_tests_with_new_def() -> V02State {
+fn state_for_amm_tests_with_new_def() -> V03State {
     let initial_data = [];
-    let mut state = V02State::new_with_genesis_accounts(&initial_data, &[]);
+    let mut state = V03State::new_with_genesis_accounts(&initial_data, &[]);
     state.force_insert_account(
         IdForExeTests::token_a_definition_id(),
         AccountsForExeTests::token_a_definition_account(),

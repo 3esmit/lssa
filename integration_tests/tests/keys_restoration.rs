@@ -1,6 +1,12 @@
-use std::{str::FromStr, time::Duration};
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
 
-use anyhow::{Context, Result};
+use std::{str::FromStr as _, time::Duration};
+
+use anyhow::{Context as _, Result};
 use integration_tests::{
     TIME_TO_WAIT_FOR_BLOCK_SECONDS, TestContext, fetch_privacy_preserving_tx,
     format_private_account_id, format_public_account_id, verify_commitment_is_in_state,
@@ -8,6 +14,7 @@ use integration_tests::{
 use key_protocol::key_management::key_tree::chain_index::ChainIndex;
 use log::info;
 use nssa::{AccountId, program::Program};
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
 use wallet::cli::{
     Command, SubcommandReturnValue,
@@ -87,7 +94,7 @@ async fn sync_private_account_with_non_zero_chain_index() -> Result<()> {
     assert_eq!(tx.message.new_commitments[0], new_commitment1);
 
     assert_eq!(tx.message.new_commitments.len(), 2);
-    for commitment in tx.message.new_commitments.into_iter() {
+    for commitment in tx.message.new_commitments {
         assert!(verify_commitment_is_in_state(commitment, ctx.sequencer_client()).await);
     }
 
@@ -299,8 +306,8 @@ async fn restore_keys_from_seed() -> Result<()> {
         .get_account_balance(to_account_id4)
         .await?;
 
-    assert_eq!(acc3.balance, 91); // 102 - 11
-    assert_eq!(acc4.balance, 114); // 103 + 11
+    assert_eq!(acc3, 91); // 102 - 11
+    assert_eq!(acc4, 114); // 103 + 11
 
     info!("Successfully restored keys and verified transactions");
 

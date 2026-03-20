@@ -9,36 +9,32 @@ pub struct ChildKeysPublic {
     pub csk: nssa::PrivateKey,
     pub cpk: nssa::PublicKey,
     pub ccc: [u8; 32],
-    /// Can be [`None`] if root
+    /// Can be [`None`] if root.
     pub cci: Option<u32>,
 }
 
 impl ChildKeysPublic {
+    #[expect(clippy::big_endian_bytes, reason = "BIP-032 uses big endian")]
     fn compute_hash_value(&self, cci: u32) -> [u8; 64] {
         let mut hash_input = vec![];
 
-        match ((2u32).pow(31)).cmp(&cci) {
-            // Non-harden
-            std::cmp::Ordering::Greater => {
-                // BIP-032 compatibility requires 1-byte header from the public_key;
-                // Not stored in `self.cpk.value()`
-                let sk = secp256k1::SecretKey::from_byte_array(*self.cssk.value())
-                    .expect("32 bytes, within curve order");
-                let pk = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
-                hash_input.extend_from_slice(&secp256k1::PublicKey::serialize(&pk));
-                hash_input.extend_from_slice(&cci.to_be_bytes());
-
-                hmac_sha512::HMAC::mac(hash_input, self.ccc)
-            }
-            // Harden
-            _ => {
-                hash_input.extend_from_slice(&[0u8]);
-                hash_input.extend_from_slice(self.cssk.value());
-                hash_input.extend_from_slice(&cci.to_be_bytes());
-
-                hmac_sha512::HMAC::mac(hash_input, self.ccc)
-            }
+        if ((2_u32).pow(31)).cmp(&cci) == std::cmp::Ordering::Greater {
+            // Non-harden.
+            // BIP-032 compatibility requires 1-byte header from the public_key;
+            // Not stored in `self.cpk.value()`.
+            let sk = secp256k1::SecretKey::from_byte_array(*self.cssk.value())
+                .expect("32 bytes, within curve order");
+            let pk = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
+            hash_input.extend_from_slice(&secp256k1::PublicKey::serialize(&pk));
+        } else {
+            // Harden.
+            hash_input.extend_from_slice(&[0_u8]);
+            hash_input.extend_from_slice(self.cssk.value());
         }
+
+        hash_input.extend_from_slice(&cci.to_be_bytes());
+
+        hmac_sha512::HMAC::mac(hash_input, self.ccc)
     }
 }
 
@@ -73,15 +69,16 @@ impl KeyNode for ChildKeysPublic {
         let cssk = nssa::PrivateKey::try_new(
             cssk.add_tweak(&Scalar::from_be_bytes(*self.cssk.value()).unwrap())
                 .expect("Expect a valid Scalar")
-                .secret_bytes(),
-        )
+                .secret_bytes()
+        })
         .unwrap();
 
         let csk = nssa::PrivateKey::tweak(cssk.value()).unwrap();
 
-        if secp256k1::constants::CURVE_ORDER < *csk.value() {
-            panic!("Secret key cannot exceed curve order");
-        }
+        assert!(
+            secp256k1::constants::CURVE_ORDER >= *csk.value(),
+            "Secret key cannot exceed curve order"
+        );
 
         let ccc = *hash_value
             .last_chunk::<32>()
@@ -111,6 +108,10 @@ impl KeyNode for ChildKeysPublic {
     }
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "TODO add meaningful name"
+)]
 impl<'a> From<&'a ChildKeysPublic> for &'a nssa::PrivateKey {
     fn from(value: &'a ChildKeysPublic) -> Self {
         &value.csk
@@ -124,7 +125,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_master_keys_generation() {
+    fn master_keys_generation() {
         let seed = [
             88, 189, 37, 237, 199, 125, 151, 226, 69, 153, 165, 113, 191, 69, 188, 221, 9, 34, 173,
             134, 61, 109, 34, 103, 121, 39, 237, 14, 107, 194, 24, 194, 191, 14, 237, 185, 12, 87,
@@ -163,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn test_harden_child_keys_generation() {
+    fn harden_child_keys_generation() {
         let seed = [
             88, 189, 37, 237, 199, 125, 151, 226, 69, 153, 165, 113, 191, 69, 188, 221, 9, 34, 173,
             134, 61, 109, 34, 103, 121, 39, 237, 14, 107, 194, 24, 194, 191, 14, 237, 185, 12, 87,
@@ -171,7 +172,7 @@ mod tests {
             187, 148, 92, 44, 253, 210, 37,
         ];
         let root_keys = ChildKeysPublic::root(seed);
-        let cci = (2u32).pow(31) + 13;
+        let cci = (2_u32).pow(31) + 13;
         let child_keys = ChildKeysPublic::nth_child(&root_keys, cci);
 
         let expected_ccc = [
@@ -204,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nonharden_child_keys_generation() {
+    fn nonharden_child_keys_generation() {
         let seed = [
             88, 189, 37, 237, 199, 125, 151, 226, 69, 153, 165, 113, 191, 69, 188, 221, 9, 34, 173,
             134, 61, 109, 34, 103, 121, 39, 237, 14, 107, 194, 24, 194, 191, 14, 237, 185, 12, 87,
@@ -245,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_case_child_keys_generation_2_power_31() {
+    fn edge_case_child_keys_generation_2_power_31() {
         let seed = [
             88, 189, 37, 237, 199, 125, 151, 226, 69, 153, 165, 113, 191, 69, 188, 221, 9, 34, 173,
             134, 61, 109, 34, 103, 121, 39, 237, 14, 107, 194, 24, 194, 191, 14, 237, 185, 12, 87,
@@ -253,7 +254,7 @@ mod tests {
             187, 148, 92, 44, 253, 210, 37,
         ];
         let root_keys = ChildKeysPublic::root(seed);
-        let cci = (2u32).pow(31); //equivant to 0, thus non-harden.
+        let cci = (2_u32).pow(31); //equivant to 0, thus non-harden.
         let child_keys = ChildKeysPublic::nth_child(&root_keys, cci);
 
         let expected_ccc = [

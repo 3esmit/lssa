@@ -1,9 +1,11 @@
-use std::{io::Write, path::PathBuf};
+use std::{io::Write as _, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
-use common::HashType;
+use common::{HashType, transaction::NSSATransaction};
+use futures::TryFutureExt as _;
 use nssa::{ProgramDeploymentTransaction, program::Program};
+use sequencer_service_rpc::RpcClient as _;
 
 use crate::{
     WalletCore,
@@ -28,62 +30,62 @@ pub(crate) trait WalletSubcommand {
     -> Result<SubcommandReturnValue>;
 }
 
-/// Represents CLI command for a wallet
+/// Represents CLI command for a wallet.
 #[derive(Subcommand, Debug, Clone)]
 #[clap(about)]
 pub enum Command {
-    /// Authenticated transfer subcommand
+    /// Authenticated transfer subcommand.
     #[command(subcommand)]
     AuthTransfer(AuthTransferSubcommand),
-    /// Generic chain info subcommand
+    /// Generic chain info subcommand.
     #[command(subcommand)]
     ChainInfo(ChainSubcommand),
-    /// Account view and sync subcommand
+    /// Account view and sync subcommand.
     #[command(subcommand)]
     Account(AccountSubcommand),
-    /// Pinata program interaction subcommand
+    /// Pinata program interaction subcommand.
     #[command(subcommand)]
     Pinata(PinataProgramAgnosticSubcommand),
-    /// Token program interaction subcommand
+    /// Token program interaction subcommand.
     #[command(subcommand)]
     Token(TokenProgramAgnosticSubcommand),
-    /// AMM program interaction subcommand
+    /// AMM program interaction subcommand.
     #[command(subcommand)]
     AMM(AmmProgramAgnosticSubcommand),
     /// Check the wallet can connect to the node and builtin local programs
-    /// match the remote versions
-    CheckHealth {},
-    /// Command to setup config, get and set config fields
+    /// match the remote versions.
+    CheckHealth,
+    /// Command to setup config, get and set config fields.
     #[command(subcommand)]
     Config(ConfigSubcommand),
-    /// Restoring keys from given password at given `depth`
+    /// Restoring keys from given password at given `depth`.
     ///
-    /// !!!WARNING!!! will rewrite current storage
+    /// !!!WARNING!!! will rewrite current storage.
     RestoreKeys {
         #[arg(short, long)]
         /// Indicates, how deep in tree accounts may be. Affects command complexity.
         depth: u32,
     },
-    /// Deploy a program
+    /// Deploy a program.
     DeployProgram { binary_filepath: PathBuf },
 }
 
-/// To execute commands, env var NSSA_WALLET_HOME_DIR must be set into directory with config
+/// To execute commands, env var `NSSA_WALLET_HOME_DIR` must be set into directory with config.
 ///
 /// All account addresses must be valid 32 byte base58 strings.
 ///
-/// All account account_ids must be provided as {privacy_prefix}/{account_id},
-/// where valid options for `privacy_prefix` is `Public` and `Private`
+/// All account `account_ids` must be provided as {`privacy_prefix}/{account_id`},
+/// where valid options for `privacy_prefix` is `Public` and `Private`.
 #[derive(Parser, Debug)]
 #[clap(version, about)]
 pub struct Args {
-    /// Continious run flag
+    /// Continious run flag.
     #[arg(short, long)]
     pub continuous_run: bool,
-    /// Basic authentication in the format `user` or `user:password`
+    /// Basic authentication in the format `user` or `user:password`.
     #[arg(long)]
     pub auth: Option<String>,
-    /// Wallet command
+    /// Wallet command.
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -114,7 +116,7 @@ pub async fn execute_subcommand(
         Command::Pinata(pinata_subcommand) => {
             pinata_subcommand.handle_subcommand(wallet_core).await?
         }
-        Command::CheckHealth {} => {
+        Command::CheckHealth => {
             let remote_program_ids = wallet_core
                 .sequencer_client
                 .get_program_ids()
@@ -124,29 +126,33 @@ pub async fn execute_subcommand(
             else {
                 panic!("Missing authenticated transfer ID from remote");
             };
-            if authenticated_transfer_id != &Program::authenticated_transfer_program().id() {
-                panic!("Local ID for authenticated transfer program is different from remote");
-            }
+            assert!(
+                authenticated_transfer_id == &Program::authenticated_transfer_program().id(),
+                "Local ID for authenticated transfer program is different from remote"
+            );
             let Some(token_id) = remote_program_ids.get("token") else {
                 panic!("Missing token program ID from remote");
             };
-            if token_id != &Program::token().id() {
-                panic!("Local ID for token program is different from remote");
-            }
+            assert!(
+                token_id == &Program::token().id(),
+                "Local ID for token program is different from remote"
+            );
             let Some(circuit_id) = remote_program_ids.get("privacy_preserving_circuit") else {
                 panic!("Missing privacy preserving circuit ID from remote");
             };
-            if circuit_id != &nssa::PRIVACY_PRESERVING_CIRCUIT_ID {
-                panic!("Local ID for privacy preserving circuit is different from remote");
-            }
+            assert!(
+                circuit_id == &nssa::PRIVACY_PRESERVING_CIRCUIT_ID,
+                "Local ID for privacy preserving circuit is different from remote"
+            );
             let Some(amm_id) = remote_program_ids.get("amm") else {
                 panic!("Missing AMM program ID from remote");
             };
-            if amm_id != &Program::amm().id() {
-                panic!("Local ID for AMM program is different from remote");
-            }
+            assert!(
+                amm_id == &Program::amm().id(),
+                "Local ID for AMM program is different from remote"
+            );
 
-            println!("✅All looks good!");
+            println!("\u{2705}All looks good!");
 
             SubcommandReturnValue::Empty
         }
@@ -171,7 +177,7 @@ pub async fn execute_subcommand(
             let transaction = ProgramDeploymentTransaction::new(message);
             let _response = wallet_core
                 .sequencer_client
-                .send_tx_program(transaction)
+                .send_transaction(NSSATransaction::ProgramDeployment(transaction))
                 .await
                 .context("Transaction submission error")?;
 
@@ -184,11 +190,7 @@ pub async fn execute_subcommand(
 
 pub async fn execute_continuous_run(wallet_core: &mut WalletCore) -> Result<()> {
     loop {
-        let latest_block_num = wallet_core
-            .sequencer_client
-            .get_last_block()
-            .await?
-            .last_block;
+        let latest_block_num = wallet_core.sequencer_client.get_last_block_id().await?;
         wallet_core.sync_to_block(latest_block_num).await?;
 
         tokio::time::sleep(wallet_core.config().seq_poll_timeout).await;
@@ -202,7 +204,7 @@ pub fn read_password_from_stdin() -> Result<String> {
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut password)?;
 
-    Ok(password.trim().to_string())
+    Ok(password.trim().to_owned())
 }
 
 pub async fn execute_keys_restoration(wallet_core: &mut WalletCore, depth: u32) -> Result<()> {
@@ -226,16 +228,17 @@ pub async fn execute_keys_restoration(wallet_core: &mut WalletCore, depth: u32) 
         .storage
         .user_data
         .public_key_tree
-        .cleanup_tree_remove_uninit_layered(depth, wallet_core.sequencer_client.clone())
+        .cleanup_tree_remove_uninit_layered(depth, |account_id| {
+            wallet_core
+                .sequencer_client
+                .get_account(account_id)
+                .map_err(Into::into)
+        })
         .await?;
 
     println!("Public tree cleaned up");
 
-    let last_block = wallet_core
-        .sequencer_client
-        .get_last_block()
-        .await?
-        .last_block;
+    let last_block = wallet_core.sequencer_client.get_last_block_id().await?;
 
     println!("Last block is {last_block}");
 

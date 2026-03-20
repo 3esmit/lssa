@@ -1,8 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use clap::Subcommand;
 use itertools::Itertools as _;
 use key_protocol::key_management::key_tree::chain_index::ChainIndex;
 use nssa::{Account, PublicKey, program::Program};
+use sequencer_service_rpc::RpcClient as _;
 use token_core::{TokenDefinition, TokenHolding};
 
 use crate::{
@@ -12,63 +13,63 @@ use crate::{
     helperfunctions::{AccountPrivacyKind, HumanReadableAccount, parse_addr_with_privacy_prefix},
 };
 
-/// Represents generic chain CLI subcommand
+/// Represents generic chain CLI subcommand.
 #[derive(Subcommand, Debug, Clone)]
 pub enum AccountSubcommand {
-    /// Get account data
+    /// Get account data.
     Get {
-        /// Flag to get raw account data
+        /// Flag to get raw account data.
         #[arg(short, long)]
         raw: bool,
-        /// Display keys (pk for public accounts, npk/vpk for private accounts)
+        /// Display keys (pk for public accounts, npk/vpk for private accounts).
         #[arg(short, long)]
         keys: bool,
-        /// Valid 32 byte base58 string with privacy prefix
+        /// Valid 32 byte base58 string with privacy prefix.
         #[arg(short, long)]
         account_id: String,
     },
-    /// Produce new public or private account
+    /// Produce new public or private account.
     #[command(subcommand)]
     New(NewSubcommand),
-    /// Sync private accounts
-    SyncPrivate {},
-    /// List all accounts owned by the wallet
+    /// Sync private accounts.
+    SyncPrivate,
+    /// List all accounts owned by the wallet.
     #[command(visible_alias = "ls")]
     List {
-        /// Show detailed account information (like `account get`)
+        /// Show detailed account information (like `account get`).
         #[arg(short, long)]
         long: bool,
     },
-    /// Set a label for an account
+    /// Set a label for an account.
     Label {
-        /// Valid 32 byte base58 string with privacy prefix
+        /// Valid 32 byte base58 string with privacy prefix.
         #[arg(short, long)]
         account_id: String,
-        /// The label to assign to the account
+        /// The label to assign to the account.
         #[arg(short, long)]
         label: String,
     },
 }
 
-/// Represents generic register CLI subcommand
+/// Represents generic register CLI subcommand.
 #[derive(Subcommand, Debug, Clone)]
 pub enum NewSubcommand {
-    /// Register new public account
+    /// Register new public account.
     Public {
         #[arg(long)]
-        /// Chain index of a parent node
+        /// Chain index of a parent node.
         cci: Option<ChainIndex>,
         #[arg(short, long)]
-        /// Label to assign to the new account
+        /// Label to assign to the new account.
         label: Option<String>,
     },
-    /// Register new private account
+    /// Register new private account.
     Private {
         #[arg(long)]
-        /// Chain index of a parent node
+        /// Chain index of a parent node.
         cci: Option<ChainIndex>,
         #[arg(short, long)]
-        /// Label to assign to the new account
+        /// Label to assign to the new account.
         label: Option<String>,
     },
 }
@@ -79,8 +80,8 @@ impl WalletSubcommand for NewSubcommand {
         wallet_core: &mut WalletCore,
     ) -> Result<SubcommandReturnValue> {
         match self {
-            NewSubcommand::Public { cci, label } => {
-                if let Some(ref label) = label
+            Self::Public { cci, label } => {
+                if let Some(label) = &label
                     && wallet_core
                         .storage
                         .labels
@@ -116,8 +117,8 @@ impl WalletSubcommand for NewSubcommand {
 
                 Ok(SubcommandReturnValue::RegisterAccount { account_id })
             }
-            NewSubcommand::Private { cci, label } => {
-                if let Some(ref label) = label
+            Self::Private { cci, label } => {
+                if let Some(label) = &label
                     && wallet_core
                         .storage
                         .labels
@@ -159,52 +160,14 @@ impl WalletSubcommand for NewSubcommand {
     }
 }
 
-/// Formats account details for display, returning (description, json_view)
-fn format_account_details(account: &Account) -> (String, String) {
-    let auth_tr_prog_id = Program::authenticated_transfer_program().id();
-    let token_prog_id = Program::token().id();
-
-    match &account.program_owner {
-        o if *o == auth_tr_prog_id => (
-            "Account owned by authenticated transfer program".to_string(),
-            serde_json::to_string(&account).unwrap(),
-        ),
-        o if *o == token_prog_id => {
-            if let Ok(token_def) = TokenDefinition::try_from(&account.data) {
-                (
-                    "Definition account owned by token program".to_string(),
-                    serde_json::to_string(&token_def).unwrap(),
-                )
-            } else if let Ok(token_hold) = TokenHolding::try_from(&account.data) {
-                (
-                    "Holding account owned by token program".to_string(),
-                    serde_json::to_string(&token_hold).unwrap(),
-                )
-            } else {
-                let account_hr: HumanReadableAccount = account.clone().into();
-                (
-                    "Unknown token program account".to_string(),
-                    serde_json::to_string(&account_hr).unwrap(),
-                )
-            }
-        }
-        _ => {
-            let account_hr: HumanReadableAccount = account.clone().into();
-            (
-                "Account".to_string(),
-                serde_json::to_string(&account_hr).unwrap(),
-            )
-        }
-    }
-}
-
 impl WalletSubcommand for AccountSubcommand {
+    #[expect(clippy::cognitive_complexity, reason = "TODO: fix later")]
     async fn handle_subcommand(
         self,
         wallet_core: &mut WalletCore,
     ) -> Result<SubcommandReturnValue> {
         match self {
-            AccountSubcommand::Get {
+            Self::Get {
                 raw,
                 keys,
                 account_id,
@@ -223,7 +186,7 @@ impl WalletSubcommand for AccountSubcommand {
                     }
                     AccountPrivacyKind::Private => wallet_core
                         .get_account_private(account_id)
-                        .ok_or(anyhow::anyhow!("Private account not found in storage"))?,
+                        .context("Private account not found in storage")?,
                 };
 
                 // Helper closure to display keys for the account
@@ -234,7 +197,7 @@ impl WalletSubcommand for AccountSubcommand {
                                 .storage
                                 .user_data
                                 .get_pub_account_signing_key(account_id)
-                                .ok_or(anyhow::anyhow!("Public account not found in storage"))?;
+                                .context("Public account not found in storage")?;
 
                             let public_key = PublicKey::new_from_private_key(private_key);
                             println!("pk {}", hex::encode(public_key.value()));
@@ -244,7 +207,7 @@ impl WalletSubcommand for AccountSubcommand {
                                 .storage
                                 .user_data
                                 .get_private_account(account_id)
-                                .ok_or(anyhow::anyhow!("Private account not found in storage"))?;
+                                .context("Private account not found in storage")?;
 
                             println!("npk {}", hex::encode(key.nullifier_public_key.0));
                             println!("vpk {}", hex::encode(key.viewing_public_key.to_bytes()));
@@ -264,7 +227,7 @@ impl WalletSubcommand for AccountSubcommand {
                 }
 
                 if raw {
-                    let account_hr: HumanReadableAccount = account.clone().into();
+                    let account_hr: HumanReadableAccount = account.into();
                     println!("{}", serde_json::to_string(&account_hr).unwrap());
 
                     return Ok(SubcommandReturnValue::Empty);
@@ -280,15 +243,9 @@ impl WalletSubcommand for AccountSubcommand {
 
                 Ok(SubcommandReturnValue::Empty)
             }
-            AccountSubcommand::New(new_subcommand) => {
-                new_subcommand.handle_subcommand(wallet_core).await
-            }
-            AccountSubcommand::SyncPrivate {} => {
-                let curr_last_block = wallet_core
-                    .sequencer_client
-                    .get_last_block()
-                    .await?
-                    .last_block;
+            Self::New(new_subcommand) => new_subcommand.handle_subcommand(wallet_core).await,
+            Self::SyncPrivate => {
+                let curr_last_block = wallet_core.sequencer_client.get_last_block_id().await?;
 
                 if wallet_core
                     .storage
@@ -306,17 +263,15 @@ impl WalletSubcommand for AccountSubcommand {
 
                 Ok(SubcommandReturnValue::SyncedToBlock(curr_last_block))
             }
-            AccountSubcommand::List { long } => {
+            Self::List { long } => {
                 let user_data = &wallet_core.storage.user_data;
                 let labels = &wallet_core.storage.labels;
 
                 let format_with_label = |prefix: &str, id: nssa::AccountId| {
                     let id_str = id.to_string();
-                    if let Some(label) = labels.get(&id_str) {
-                        format!("{prefix} [{label}]")
-                    } else {
-                        prefix.to_string()
-                    }
+                    labels
+                        .get(&id_str)
+                        .map_or_else(|| prefix.to_owned(), |label| format!("{prefix} [{label}]"))
                 };
 
                 if !long {
@@ -381,7 +336,7 @@ impl WalletSubcommand for AccountSubcommand {
                 }
 
                 // Public key tree accounts
-                for (id, chain_index) in user_data.public_key_tree.account_id_map.iter() {
+                for (id, chain_index) in &user_data.public_key_tree.account_id_map {
                     println!(
                         "{}",
                         format_with_label(&format!("{chain_index} Public/{id}"), *id)
@@ -398,7 +353,7 @@ impl WalletSubcommand for AccountSubcommand {
                 }
 
                 // Private key tree accounts
-                for (id, chain_index) in user_data.private_key_tree.account_id_map.iter() {
+                for (id, chain_index) in &user_data.private_key_tree.account_id_map {
                     println!(
                         "{}",
                         format_with_label(&format!("{chain_index} Private/{id}"), *id)
@@ -416,7 +371,7 @@ impl WalletSubcommand for AccountSubcommand {
 
                 Ok(SubcommandReturnValue::Empty)
             }
-            AccountSubcommand::Label { account_id, label } => {
+            Self::Label { account_id, label } => {
                 let (account_id_str, _) = parse_addr_with_privacy_prefix(&account_id)?;
 
                 // Check if label is already used by a different account
@@ -447,6 +402,51 @@ impl WalletSubcommand for AccountSubcommand {
 
                 Ok(SubcommandReturnValue::Empty)
             }
+        }
+    }
+}
+
+/// Formats account details for display, returning (description, `json_view`).
+fn format_account_details(account: &Account) -> (String, String) {
+    let auth_tr_prog_id = Program::authenticated_transfer_program().id();
+    let token_prog_id = Program::token().id();
+
+    match &account.program_owner {
+        o if *o == auth_tr_prog_id => {
+            let account_hr: HumanReadableAccount = account.clone().into();
+            (
+                "Account owned by authenticated transfer program".to_owned(),
+                serde_json::to_string(&account_hr).unwrap(),
+            )
+        }
+        o if *o == token_prog_id => TokenDefinition::try_from(&account.data)
+            .map(|token_def| {
+                (
+                    "Definition account owned by token program".to_owned(),
+                    serde_json::to_string(&token_def).unwrap(),
+                )
+            })
+            .or_else(|_| {
+                TokenHolding::try_from(&account.data).map(|token_hold| {
+                    (
+                        "Holding account owned by token program".to_owned(),
+                        serde_json::to_string(&token_hold).unwrap(),
+                    )
+                })
+            })
+            .unwrap_or_else(|_| {
+                let account_hr: HumanReadableAccount = account.clone().into();
+                (
+                    "Unknown token program account".to_owned(),
+                    serde_json::to_string(&account_hr).unwrap(),
+                )
+            }),
+        _ => {
+            let account_hr: HumanReadableAccount = account.clone().into();
+            (
+                "Account".to_owned(),
+                serde_json::to_string(&account_hr).unwrap(),
+            )
         }
     }
 }

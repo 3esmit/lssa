@@ -1,3 +1,9 @@
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -7,6 +13,7 @@ use integration_tests::{
     format_public_account_id, verify_commitment_is_in_state,
 };
 use log::info;
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
 use wallet::cli::{
     Command, SubcommandReturnValue,
@@ -15,6 +22,114 @@ use wallet::cli::{
         native_token_transfer::AuthTransferSubcommand, pinata::PinataProgramAgnosticSubcommand,
     },
 };
+
+#[test]
+async fn claim_pinata_to_uninitialized_public_account_fails_fast() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: winner_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    let winner_account_id_formatted = format_public_account_id(winner_account_id);
+
+    let pinata_balance_pre = ctx
+        .sequencer_client()
+        .get_account_balance(PINATA_BASE58.parse().unwrap())
+        .await?;
+
+    let claim_result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Pinata(PinataProgramAgnosticSubcommand::Claim {
+            to: winner_account_id_formatted,
+        }),
+    )
+    .await;
+
+    assert!(
+        claim_result.is_err(),
+        "Expected uninitialized account error"
+    );
+    let err = claim_result.unwrap_err().to_string();
+    assert!(
+        err.contains("wallet auth-transfer init --account-id Public/"),
+        "Expected init guidance, got: {err}",
+    );
+
+    let pinata_balance_post = ctx
+        .sequencer_client()
+        .get_account_balance(PINATA_BASE58.parse().unwrap())
+        .await?;
+
+    assert_eq!(pinata_balance_post, pinata_balance_pre);
+
+    Ok(())
+}
+
+#[test]
+async fn claim_pinata_to_uninitialized_private_account_fails_fast() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Private {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: winner_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    let winner_account_id_formatted = format_private_account_id(winner_account_id);
+
+    let pinata_balance_pre = ctx
+        .sequencer_client()
+        .get_account_balance(PINATA_BASE58.parse().unwrap())
+        .await?;
+
+    let claim_result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Pinata(PinataProgramAgnosticSubcommand::Claim {
+            to: winner_account_id_formatted,
+        }),
+    )
+    .await;
+
+    assert!(
+        claim_result.is_err(),
+        "Expected uninitialized account error"
+    );
+    let err = claim_result.unwrap_err().to_string();
+    assert!(
+        err.contains("wallet auth-transfer init --account-id Private/"),
+        "Expected init guidance, got: {err}",
+    );
+
+    let pinata_balance_post = ctx
+        .sequencer_client()
+        .get_account_balance(PINATA_BASE58.parse().unwrap())
+        .await?;
+
+    assert_eq!(pinata_balance_post, pinata_balance_pre);
+
+    Ok(())
+}
 
 #[test]
 async fn claim_pinata_to_existing_public_account() -> Result<()> {
@@ -28,8 +143,7 @@ async fn claim_pinata_to_existing_public_account() -> Result<()> {
     let pinata_balance_pre = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
 
@@ -40,14 +154,12 @@ async fn claim_pinata_to_existing_public_account() -> Result<()> {
     let pinata_balance_post = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     let winner_balance_post = ctx
         .sequencer_client()
         .get_account_balance(ctx.existing_public_accounts()[0])
-        .await?
-        .balance;
+        .await?;
 
     assert_eq!(pinata_balance_post, pinata_balance_pre - pinata_prize);
     assert_eq!(winner_balance_post, 10000 + pinata_prize);
@@ -69,8 +181,7 @@ async fn claim_pinata_to_existing_private_account() -> Result<()> {
     let pinata_balance_pre = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     let result = wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
     let SubcommandReturnValue::PrivacyPreservingTransfer { tx_hash: _ } = result else {
@@ -93,8 +204,7 @@ async fn claim_pinata_to_existing_private_account() -> Result<()> {
     let pinata_balance_post = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     assert_eq!(pinata_balance_post, pinata_balance_pre - pinata_prize);
 
@@ -150,8 +260,7 @@ async fn claim_pinata_to_new_private_account() -> Result<()> {
     let pinata_balance_pre = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
 
@@ -167,8 +276,7 @@ async fn claim_pinata_to_new_private_account() -> Result<()> {
     let pinata_balance_post = ctx
         .sequencer_client()
         .get_account_balance(PINATA_BASE58.parse().unwrap())
-        .await?
-        .balance;
+        .await?;
 
     assert_eq!(pinata_balance_post, pinata_balance_pre - pinata_prize);
 

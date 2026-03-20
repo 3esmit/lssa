@@ -2,16 +2,16 @@
 
 use std::{net::SocketAddr, path::PathBuf, sync::LazyLock};
 
-use anyhow::{Context, Result, bail};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use common::{HashType, sequencer_client::SequencerClient, transaction::NSSATransaction};
+use anyhow::{Context as _, Result, bail};
+use common::{HashType, transaction::NSSATransaction};
 use futures::FutureExt as _;
 use indexer_service::IndexerHandle;
 use log::{debug, error, warn};
 use nssa::{AccountId, PrivacyPreservingTransaction};
 use nssa_core::Commitment;
-use sequencer_core::indexer_client::{IndexerClient, IndexerClientTrait};
-use sequencer_runner::SequencerHandle;
+use sequencer_core::indexer_client::{IndexerClient, IndexerClientTrait as _};
+use sequencer_service::SequencerHandle;
+use sequencer_service_rpc::{RpcClient as _, SequencerClient, SequencerClientBuilder};
 use tempfile::TempDir;
 use testcontainers::compose::DockerCompose;
 use wallet::{WalletCore, config::WalletConfigOverrides};
@@ -38,7 +38,8 @@ pub struct TestContext {
     indexer_client: IndexerClient,
     wallet: WalletCore,
     wallet_password: String,
-    sequencer_handle: SequencerHandle,
+    /// Optional to move out value in Drop.
+    sequencer_handle: Option<SequencerHandle>,
     indexer_handle: IndexerHandle,
     bedrock_compose: DockerCompose,
     _temp_indexer_dir: TempDir,
@@ -52,7 +53,8 @@ impl TestContext {
         Self::builder().build().await
     }
 
-    pub fn builder() -> TestContextBuilder {
+    #[must_use]
+    pub const fn builder() -> TestContextBuilder {
         TestContextBuilder::new()
     }
 
@@ -89,8 +91,9 @@ impl TestContext {
             .context("Failed to convert sequencer addr to URL")?;
         let indexer_url = config::addr_to_url(config::UrlProtocol::Ws, indexer_handle.addr())
             .context("Failed to convert indexer addr to URL")?;
-        let sequencer_client =
-            SequencerClient::new(sequencer_url).context("Failed to create sequencer client")?;
+        let sequencer_client = SequencerClientBuilder::default()
+            .build(sequencer_url)
+            .context("Failed to create sequencer client")?;
         let indexer_client = IndexerClient::new(&indexer_url)
             .await
             .context("Failed to create indexer client")?;
@@ -101,7 +104,7 @@ impl TestContext {
             wallet,
             wallet_password,
             bedrock_compose,
-            sequencer_handle,
+            sequencer_handle: Some(sequencer_handle),
             indexer_handle,
             _temp_indexer_dir: temp_indexer_dir,
             _temp_sequencer_dir: temp_sequencer_dir,
@@ -120,6 +123,10 @@ impl TestContext {
             // Setting port to 0 to avoid conflicts between parallel tests, actual port will be retrieved after container is up
             .with_env("PORT", "0");
 
+        #[expect(
+            clippy::items_after_statements,
+            reason = "This is more readable is this function used just after its definition"
+        )]
         async fn up_and_retrieve_port(compose: &mut DockerCompose) -> Result<u16> {
             compose
                 .up()
@@ -151,10 +158,12 @@ impl TestContext {
         }
 
         let mut port = None;
-        let mut attempt = 0;
-        let max_attempts = 5;
+        let mut attempt = 0_u32;
+        let max_attempts = 5_u32;
         while port.is_none() && attempt < max_attempts {
-            attempt += 1;
+            attempt = attempt
+                .checked_add(1)
+                .expect("We check that attempt < max_attempts, so this won't overflow");
             match up_and_retrieve_port(&mut compose).await {
                 Ok(p) => {
                     port = Some(p);
@@ -181,7 +190,10 @@ impl TestContext {
         let temp_indexer_dir =
             tempfile::tempdir().context("Failed to create temp dir for indexer home")?;
 
-        debug!("Using temp indexer home at {:?}", temp_indexer_dir.path());
+        debug!(
+            "Using temp indexer home at {}",
+            temp_indexer_dir.path().display()
+        );
 
         let indexer_config = config::indexer_config(
             bedrock_addr,
@@ -206,8 +218,8 @@ impl TestContext {
             tempfile::tempdir().context("Failed to create temp dir for sequencer home")?;
 
         debug!(
-            "Using temp sequencer home at {:?}",
-            temp_sequencer_dir.path()
+            "Using temp sequencer home at {}",
+            temp_sequencer_dir.path().display()
         );
 
         let config = config::sequencer_config(
@@ -219,7 +231,7 @@ impl TestContext {
         )
         .context("Failed to create Sequencer config")?;
 
-        let sequencer_handle = sequencer_runner::startup_sequencer(config).await?;
+        let sequencer_handle = sequencer_service::run(config, 0).await?;
 
         Ok((sequencer_handle, temp_sequencer_dir))
     }
@@ -260,30 +272,35 @@ impl TestContext {
     }
 
     /// Get reference to the wallet.
-    pub fn wallet(&self) -> &WalletCore {
+    #[must_use]
+    pub const fn wallet(&self) -> &WalletCore {
         &self.wallet
     }
 
+    #[must_use]
     pub fn wallet_password(&self) -> &str {
         &self.wallet_password
     }
 
     /// Get mutable reference to the wallet.
-    pub fn wallet_mut(&mut self) -> &mut WalletCore {
+    pub const fn wallet_mut(&mut self) -> &mut WalletCore {
         &mut self.wallet
     }
 
     /// Get reference to the sequencer client.
-    pub fn sequencer_client(&self) -> &SequencerClient {
+    #[must_use]
+    pub const fn sequencer_client(&self) -> &SequencerClient {
         &self.sequencer_client
     }
 
     /// Get reference to the indexer client.
-    pub fn indexer_client(&self) -> &IndexerClient {
+    #[must_use]
+    pub const fn indexer_client(&self) -> &IndexerClient {
         &self.indexer_client
     }
 
     /// Get existing public account IDs in the wallet.
+    #[must_use]
     pub fn existing_public_accounts(&self) -> Vec<AccountId> {
         self.wallet
             .storage()
@@ -293,6 +310,7 @@ impl TestContext {
     }
 
     /// Get existing private account IDs in the wallet.
+    #[must_use]
     pub fn existing_private_accounts(&self) -> Vec<AccountId> {
         self.wallet
             .storage()
@@ -317,18 +335,20 @@ impl Drop for TestContext {
             wallet_password: _,
         } = self;
 
-        if sequencer_handle.is_finished() {
-            let Err(err) = self
-                .sequencer_handle
-                .run_forever()
+        let sequencer_handle = sequencer_handle
+            .take()
+            .expect("Sequencer handle should be present in TestContext drop");
+        if !sequencer_handle.is_healthy() {
+            let Err(err) = sequencer_handle
+                .failed()
                 .now_or_never()
-                .expect("Future is finished and should be ready");
+                .expect("Sequencer handle should not be running");
             error!(
-                "Sequencer handle has unexpectedly finished before TestContext drop with error: {err:#}"
+                "Sequencer handle has unexpectedly stopped before TestContext drop with error: {err:#}"
             );
         }
 
-        if indexer_handle.is_stopped() {
+        if !indexer_handle.is_healthy() {
             error!("Indexer handle has unexpectedly stopped before TestContext drop");
         }
 
@@ -352,7 +372,7 @@ impl Drop for TestContext {
     }
 }
 
-/// A test context to be used in normal #[test] tests
+/// A test context to be used in normal #[test] tests.
 pub struct BlockingTestContext {
     ctx: Option<TestContext>,
     runtime: tokio::runtime::Runtime,
@@ -368,7 +388,7 @@ impl BlockingTestContext {
         })
     }
 
-    pub fn ctx(&self) -> &TestContext {
+    pub const fn ctx(&self) -> &TestContext {
         self.ctx.as_ref().expect("TestContext is set")
     }
 }
@@ -379,19 +399,21 @@ pub struct TestContextBuilder {
 }
 
 impl TestContextBuilder {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             initial_data: None,
             sequencer_partial_config: None,
         }
     }
 
+    #[must_use]
     pub fn with_initial_data(mut self, initial_data: config::InitialData) -> Self {
         self.initial_data = Some(initial_data);
         self
     }
 
-    pub fn with_sequencer_partial_config(
+    #[must_use]
+    pub const fn with_sequencer_partial_config(
         mut self,
         sequencer_partial_config: config::SequencerPartialConfig,
     ) -> Self {
@@ -419,31 +441,30 @@ impl Drop for BlockingTestContext {
             if let Some(ctx) = ctx.take() {
                 drop(ctx);
             }
-        })
+        });
     }
 }
 
+#[must_use]
 pub fn format_public_account_id(account_id: AccountId) -> String {
     format!("Public/{account_id}")
 }
 
+#[must_use]
 pub fn format_private_account_id(account_id: AccountId) -> String {
     format!("Private/{account_id}")
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "We want the code to panic if the transaction type is not PrivacyPreserving"
+)]
 pub async fn fetch_privacy_preserving_tx(
     seq_client: &SequencerClient,
     tx_hash: HashType,
 ) -> PrivacyPreservingTransaction {
-    let transaction_encoded = seq_client
-        .get_transaction_by_hash(tx_hash)
-        .await
-        .unwrap()
-        .transaction
-        .unwrap();
+    let tx = seq_client.get_transaction(tx_hash).await.unwrap().unwrap();
 
-    let tx_bytes = BASE64.decode(transaction_encoded).unwrap();
-    let tx = borsh::from_slice(&tx_bytes).unwrap();
     match tx {
         NSSATransaction::PrivacyPreserving(privacy_preserving_transaction) => {
             privacy_preserving_transaction
@@ -456,8 +477,10 @@ pub async fn verify_commitment_is_in_state(
     commitment: Commitment,
     seq_client: &SequencerClient,
 ) -> bool {
-    matches!(
-        seq_client.get_proof_for_commitment(commitment).await,
-        Ok(Some(_))
-    )
+    seq_client
+        .get_proof_for_commitment(commitment)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
 }

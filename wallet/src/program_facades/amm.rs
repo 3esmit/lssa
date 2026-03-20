@@ -1,10 +1,11 @@
 use amm_core::{compute_liquidity_token_pda, compute_pool_pda, compute_vault_pda};
-use common::{error::ExecutionFailureKind, rpc_primitives::requests::SendTxResponse};
+use common::{HashType, transaction::NSSATransaction};
 use nssa::{AccountId, program::Program};
+use sequencer_service_rpc::RpcClient as _;
 use token_core::TokenHolding;
 
-use crate::WalletCore;
-pub struct Amm<'w>(pub &'w WalletCore);
+use crate::{ExecutionFailureKind, WalletCore};
+pub struct Amm<'wallet>(pub &'wallet WalletCore);
 
 impl Amm<'_> {
     pub async fn send_new_definition(
@@ -14,7 +15,7 @@ impl Amm<'_> {
         user_holding_lp: AccountId,
         balance_a: u128,
         balance_b: u128,
-    ) -> Result<SendTxResponse, ExecutionFailureKind> {
+    ) -> Result<HashType, ExecutionFailureKind> {
         let program = Program::amm();
         let amm_program_id = Program::amm().id();
         let instruction = amm_core::Instruction::NewDefinition {
@@ -27,18 +28,18 @@ impl Amm<'_> {
             .0
             .get_account_public(user_holding_a)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
         let user_b_acc = self
             .0
             .get_account_public(user_holding_b)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let definition_token_a_id = TokenHolding::try_from(&user_a_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_a))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_a))?
             .definition_id();
         let definition_token_b_id = TokenHolding::try_from(&user_b_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_b))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_b))?
             .definition_id();
 
         let amm_pool =
@@ -61,7 +62,7 @@ impl Amm<'_> {
             .0
             .get_accounts_nonces(vec![user_holding_a, user_holding_b])
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let signing_key_a = self
             .0
@@ -92,7 +93,11 @@ impl Amm<'_> {
 
         let tx = nssa::PublicTransaction::new(message, witness_set);
 
-        Ok(self.0.sequencer_client.send_tx_public(tx).await?)
+        Ok(self
+            .0
+            .sequencer_client
+            .send_transaction(NSSATransaction::Public(tx))
+            .await?)
     }
 
     pub async fn send_swap(
@@ -102,7 +107,7 @@ impl Amm<'_> {
         swap_amount_in: u128,
         min_amount_out: u128,
         token_definition_id_in: AccountId,
-    ) -> Result<SendTxResponse, ExecutionFailureKind> {
+    ) -> Result<HashType, ExecutionFailureKind> {
         let instruction = amm_core::Instruction::Swap {
             swap_amount_in,
             min_amount_out,
@@ -115,18 +120,18 @@ impl Amm<'_> {
             .0
             .get_account_public(user_holding_a)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
         let user_b_acc = self
             .0
             .get_account_public(user_holding_b)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let definition_token_a_id = TokenHolding::try_from(&user_a_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_a))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_a))?
             .definition_id();
         let definition_token_b_id = TokenHolding::try_from(&user_b_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_b))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_b))?
             .definition_id();
 
         let amm_pool =
@@ -149,17 +154,17 @@ impl Amm<'_> {
             .0
             .get_account_public(user_holding_a)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
         let token_holder_acc_b = self
             .0
             .get_account_public(user_holding_b)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let token_holder_a = TokenHolding::try_from(&token_holder_acc_a.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_a))?;
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_a))?;
         let token_holder_b = TokenHolding::try_from(&token_holder_acc_b.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_b))?;
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_b))?;
 
         if token_holder_a.definition_id() == token_definition_id_in {
             account_id_auth = user_holding_a;
@@ -175,7 +180,7 @@ impl Amm<'_> {
             .0
             .get_accounts_nonces(vec![account_id_auth])
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let signing_key = self
             .0
@@ -197,7 +202,11 @@ impl Amm<'_> {
 
         let tx = nssa::PublicTransaction::new(message, witness_set);
 
-        Ok(self.0.sequencer_client.send_tx_public(tx).await?)
+        Ok(self
+            .0
+            .sequencer_client
+            .send_transaction(NSSATransaction::Public(tx))
+            .await?)
     }
 
     pub async fn send_add_liquidity(
@@ -208,7 +217,7 @@ impl Amm<'_> {
         min_amount_liquidity: u128,
         max_amount_to_add_token_a: u128,
         max_amount_to_add_token_b: u128,
-    ) -> Result<SendTxResponse, ExecutionFailureKind> {
+    ) -> Result<HashType, ExecutionFailureKind> {
         let instruction = amm_core::Instruction::AddLiquidity {
             min_amount_liquidity,
             max_amount_to_add_token_a,
@@ -221,18 +230,18 @@ impl Amm<'_> {
             .0
             .get_account_public(user_holding_a)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
         let user_b_acc = self
             .0
             .get_account_public(user_holding_b)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let definition_token_a_id = TokenHolding::try_from(&user_a_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_a))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_a))?
             .definition_id();
         let definition_token_b_id = TokenHolding::try_from(&user_b_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_b))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_b))?
             .definition_id();
 
         let amm_pool =
@@ -255,7 +264,7 @@ impl Amm<'_> {
             .0
             .get_accounts_nonces(vec![user_holding_a, user_holding_b])
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let signing_key_a = self
             .0
@@ -286,7 +295,11 @@ impl Amm<'_> {
 
         let tx = nssa::PublicTransaction::new(message, witness_set);
 
-        Ok(self.0.sequencer_client.send_tx_public(tx).await?)
+        Ok(self
+            .0
+            .sequencer_client
+            .send_transaction(NSSATransaction::Public(tx))
+            .await?)
     }
 
     pub async fn send_remove_liquidity(
@@ -297,7 +310,7 @@ impl Amm<'_> {
         remove_liquidity_amount: u128,
         min_amount_to_remove_token_a: u128,
         min_amount_to_remove_token_b: u128,
-    ) -> Result<SendTxResponse, ExecutionFailureKind> {
+    ) -> Result<HashType, ExecutionFailureKind> {
         let instruction = amm_core::Instruction::RemoveLiquidity {
             remove_liquidity_amount,
             min_amount_to_remove_token_a,
@@ -310,18 +323,18 @@ impl Amm<'_> {
             .0
             .get_account_public(user_holding_a)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
         let user_b_acc = self
             .0
             .get_account_public(user_holding_b)
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let definition_token_a_id = TokenHolding::try_from(&user_a_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_a))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_a))?
             .definition_id();
         let definition_token_b_id = TokenHolding::try_from(&user_b_acc.data)
-            .map_err(|_| ExecutionFailureKind::AccountDataError(user_holding_b))?
+            .map_err(|_err| ExecutionFailureKind::AccountDataError(user_holding_b))?
             .definition_id();
 
         let amm_pool =
@@ -344,7 +357,7 @@ impl Amm<'_> {
             .0
             .get_accounts_nonces(vec![user_holding_lp])
             .await
-            .map_err(|_| ExecutionFailureKind::SequencerError)?;
+            .map_err(ExecutionFailureKind::SequencerError)?;
 
         let signing_key_lp = self
             .0
@@ -366,6 +379,10 @@ impl Amm<'_> {
 
         let tx = nssa::PublicTransaction::new(message, witness_set);
 
-        Ok(self.0.sequencer_client.send_tx_public(tx).await?)
+        Ok(self
+            .0
+            .sequencer_client
+            .send_transaction(NSSATransaction::Public(tx))
+            .await?)
     }
 }

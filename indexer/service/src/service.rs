@@ -7,7 +7,7 @@ use indexer_core::{IndexerCore, config::IndexerConfig};
 use indexer_service_protocol::{Account, AccountId, Block, BlockId, HashType, Transaction};
 use jsonrpsee::{
     SubscriptionSink,
-    core::{Serialize, SubscriptionResult},
+    core::{Serialize, SubscriptionResult, async_trait},
     types::{ErrorCode, ErrorObject, ErrorObjectOwned},
 };
 use log::{debug, error, info, warn};
@@ -30,7 +30,7 @@ impl IndexerService {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl indexer_service_rpc::RpcServer for IndexerService {
     async fn subscribe_to_finalized_blocks(
         &self,
@@ -52,57 +52,64 @@ impl indexer_service_rpc::RpcServer for IndexerService {
         self.indexer.store.get_last_block_id().map_err(db_error)
     }
 
-    async fn get_block_by_id(&self, block_id: BlockId) -> Result<Block, ErrorObjectOwned> {
+    async fn get_block_by_id(&self, block_id: BlockId) -> Result<Option<Block>, ErrorObjectOwned> {
         Ok(self
             .indexer
             .store
             .get_block_at_id(block_id)
             .map_err(db_error)?
-            .into())
+            .map(Into::into))
     }
 
-    async fn get_block_by_hash(&self, block_hash: HashType) -> Result<Block, ErrorObjectOwned> {
+    async fn get_block_by_hash(
+        &self,
+        block_hash: HashType,
+    ) -> Result<Option<Block>, ErrorObjectOwned> {
         Ok(self
             .indexer
             .store
             .get_block_by_hash(block_hash.0)
             .map_err(db_error)?
-            .into())
+            .map(Into::into))
     }
 
     async fn get_account(&self, account_id: AccountId) -> Result<Account, ErrorObjectOwned> {
         Ok(self
             .indexer
             .store
-            .get_account_final(&account_id.into())
+            .account_current_state(&account_id.into())
+            .await
             .map_err(db_error)?
             .into())
     }
 
-    async fn get_transaction(&self, tx_hash: HashType) -> Result<Transaction, ErrorObjectOwned> {
+    async fn get_transaction(
+        &self,
+        tx_hash: HashType,
+    ) -> Result<Option<Transaction>, ErrorObjectOwned> {
         Ok(self
             .indexer
             .store
             .get_transaction_by_hash(tx_hash.0)
             .map_err(db_error)?
-            .into())
+            .map(Into::into))
     }
 
     async fn get_blocks(
         &self,
-        before: Option<u64>,
-        limit: u32,
+        before: Option<BlockId>,
+        limit: u64,
     ) -> Result<Vec<Block>, ErrorObjectOwned> {
         let blocks = self
             .indexer
             .store
-            .get_block_batch(before, limit as u64)
+            .get_block_batch(before, limit)
             .map_err(db_error)?;
 
         let mut block_res = vec![];
 
         for block in blocks {
-            block_res.push(block.into())
+            block_res.push(block.into());
         }
 
         Ok(block_res)
@@ -111,19 +118,19 @@ impl indexer_service_rpc::RpcServer for IndexerService {
     async fn get_transactions_by_account(
         &self,
         account_id: AccountId,
-        limit: u32,
-        offset: u32,
+        offset: u64,
+        limit: u64,
     ) -> Result<Vec<Transaction>, ErrorObjectOwned> {
         let transactions = self
             .indexer
             .store
-            .get_transactions_by_account(account_id.value, offset as u64, limit as u64)
+            .get_transactions_by_account(account_id.value, offset, limit)
             .map_err(db_error)?;
 
         let mut tx_res = vec![];
 
         for tx in transactions {
-            tx_res.push(tx.into())
+            tx_res.push(tx.into());
         }
 
         Ok(tx_res)
@@ -131,7 +138,11 @@ impl indexer_service_rpc::RpcServer for IndexerService {
 
     async fn healthcheck(&self) -> Result<(), ErrorObjectOwned> {
         // Checking, that indexer can calculate last state
-        let _ = self.indexer.store.final_state().map_err(db_error)?;
+        let _ = self
+            .indexer
+            .store
+            .recalculate_final_state()
+            .map_err(db_error)?;
 
         Ok(())
     }
@@ -154,8 +165,10 @@ impl SubscriptionService {
 
     pub async fn add_subscription(&self, subscription: Subscription<BlockId>) -> Result<()> {
         let guard = self.parts.load();
-        if let Err(err) = guard.new_subscription_sender.send(subscription) {
-            error!("Failed to send new subscription to subscription service with error: {err:#?}");
+        if let Err(send_err) = guard.new_subscription_sender.send(subscription) {
+            error!(
+                "Failed to send new subscription to subscription service with error: {send_err:#?}"
+            );
 
             // Respawn the subscription service loop if it has finished (either with error or panic)
             if guard.handle.is_finished() {
@@ -177,8 +190,8 @@ impl SubscriptionService {
                 }
             }
 
-            bail!(err);
-        };
+            bail!(send_err)
+        }
 
         Ok(())
     }
@@ -190,8 +203,12 @@ impl SubscriptionService {
         let handle = tokio::spawn(async move {
             let mut subscribers = Vec::new();
 
-            let mut block_stream = pin!(indexer.subscribe_parse_block_stream().await);
+            let mut block_stream = pin!(indexer.subscribe_parse_block_stream());
 
+            #[expect(
+                clippy::integer_division_remainder_used,
+                reason = "Generated by select! macro, can't be easily rewritten to avoid this lint"
+            )]
             loop {
                 tokio::select! {
                     sub = sub_receiver.recv() => {
@@ -246,7 +263,7 @@ struct Subscription<T> {
 }
 
 impl<T> Subscription<T> {
-    fn new(sink: SubscriptionSink) -> Self {
+    const fn new(sink: SubscriptionSink) -> Self {
         Self {
             sink,
             _marker: std::marker::PhantomData,
@@ -273,6 +290,7 @@ impl<T> Drop for Subscription<T> {
     }
 }
 
+#[must_use]
 pub fn not_yet_implemented_error() -> ErrorObjectOwned {
     ErrorObject::owned(
         ErrorCode::InternalError.code(),
@@ -281,10 +299,14 @@ pub fn not_yet_implemented_error() -> ErrorObjectOwned {
     )
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Error is consumed to extract details for error response"
+)]
 fn db_error(err: anyhow::Error) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(
         ErrorCode::InternalError.code(),
-        "DBError".to_string(),
+        "DBError".to_owned(),
         Some(format!("{err:#?}")),
     )
 }

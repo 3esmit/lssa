@@ -1,3 +1,9 @@
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -8,6 +14,7 @@ use integration_tests::{
 use key_protocol::key_management::key_tree::chain_index::ChainIndex;
 use log::info;
 use nssa::program::Program;
+use sequencer_service_rpc::RpcClient as _;
 use token_core::{TokenDefinition, TokenHolding};
 use tokio::test;
 use wallet::cli::{
@@ -69,7 +76,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     };
 
     // Create new token
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_public_account_id(definition_account_id),
@@ -86,8 +93,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(definition_acc.program_owner, Program::token().id());
@@ -104,8 +110,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
 
     // The account must be owned by the token program
     assert_eq!(supply_acc.program_owner, Program::token().id());
@@ -137,8 +142,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
     assert_eq!(supply_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
     assert_eq!(
@@ -153,8 +157,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     assert_eq!(recipient_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
     assert_eq!(
@@ -182,8 +185,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -199,8 +201,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -230,8 +231,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -247,8 +247,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -317,7 +316,7 @@ async fn create_and_transfer_token_with_private_supply() -> Result<()> {
     };
 
     // Create new token
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_public_account_id(definition_account_id),
@@ -335,8 +334,7 @@ async fn create_and_transfer_token_with_private_supply() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(definition_acc.program_owner, Program::token().id());
@@ -399,8 +397,7 @@ async fn create_and_transfer_token_with_private_supply() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -475,7 +472,7 @@ async fn create_token_with_private_definition() -> Result<()> {
     };
 
     // Create token with private definition
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_private_account_id(definition_account_id),
@@ -500,8 +497,7 @@ async fn create_token_with_private_definition() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
 
     assert_eq!(supply_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
@@ -580,8 +576,7 @@ async fn create_token_with_private_definition() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id_public)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -671,7 +666,7 @@ async fn create_token_with_private_definition_and_supply() -> Result<()> {
     };
 
     // Create token with both private definition and supply
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_private_account_id(definition_account_id),
@@ -843,7 +838,7 @@ async fn shielded_token_transfer() -> Result<()> {
     };
 
     // Create token
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_public_account_id(definition_account_id),
@@ -876,8 +871,7 @@ async fn shielded_token_transfer() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
     assert_eq!(
         token_holding,
@@ -966,7 +960,7 @@ async fn deshielded_token_transfer() -> Result<()> {
     };
 
     // Create token with private supply
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_public_account_id(definition_account_id),
@@ -1020,8 +1014,7 @@ async fn deshielded_token_transfer() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
     assert_eq!(
         token_holding,
@@ -1073,7 +1066,7 @@ async fn token_claiming_path_with_private_accounts() -> Result<()> {
     };
 
     // Create token
-    let name = "A NAME".to_string();
+    let name = "A NAME".to_owned();
     let total_supply = 37;
     let subcommand = TokenProgramAgnosticSubcommand::New {
         definition_account_id: format_private_account_id(definition_account_id),

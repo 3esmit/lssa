@@ -1,6 +1,14 @@
-//! Conversions between indexer_service_protocol types and nssa/nssa_core types
+//! Conversions between `indexer_service_protocol` types and `nssa/nssa_core` types.
 
-use crate::*;
+use nssa_core::account::Nonce;
+
+use crate::{
+    Account, AccountId, BedrockStatus, Block, BlockBody, BlockHeader, Ciphertext, Commitment,
+    CommitmentSetDigest, Data, EncryptedAccountData, EphemeralPublicKey, HashType, MantleMsgId,
+    Nullifier, PrivacyPreservingMessage, PrivacyPreservingTransaction, ProgramDeploymentMessage,
+    ProgramDeploymentTransaction, ProgramId, Proof, PublicKey, PublicMessage, PublicTransaction,
+    Signature, Transaction, WitnessSet,
+};
 
 // ============================================================================
 // Account-related conversions
@@ -29,7 +37,7 @@ impl From<nssa_core::account::AccountId> for AccountId {
 impl From<AccountId> for nssa_core::account::AccountId {
     fn from(value: AccountId) -> Self {
         let AccountId { value } = value;
-        nssa_core::account::AccountId::new(value)
+        Self::new(value)
     }
 }
 
@@ -46,7 +54,7 @@ impl From<nssa_core::account::Account> for Account {
             program_owner: program_owner.into(),
             balance,
             data: data.into(),
-            nonce,
+            nonce: nonce.0,
         }
     }
 }
@@ -62,11 +70,11 @@ impl TryFrom<Account> for nssa_core::account::Account {
             nonce,
         } = value;
 
-        Ok(nssa_core::account::Account {
+        Ok(Self {
             program_owner: program_owner.into(),
             balance,
             data: data.try_into()?,
-            nonce,
+            nonce: Nonce(nonce),
         })
     }
 }
@@ -81,7 +89,7 @@ impl TryFrom<Data> for nssa_core::account::Data {
     type Error = nssa_core::account::data::DataTooBigError;
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
-        nssa_core::account::Data::try_from(value.0)
+        Self::try_from(value.0)
     }
 }
 
@@ -97,7 +105,7 @@ impl From<nssa_core::Commitment> for Commitment {
 
 impl From<Commitment> for nssa_core::Commitment {
     fn from(value: Commitment) -> Self {
-        nssa_core::Commitment::from_byte_array(value.0)
+        Self::from_byte_array(value.0)
     }
 }
 
@@ -109,7 +117,7 @@ impl From<nssa_core::Nullifier> for Nullifier {
 
 impl From<Nullifier> for nssa_core::Nullifier {
     fn from(value: Nullifier) -> Self {
-        nssa_core::Nullifier::from_byte_array(value.0)
+        Self::from_byte_array(value.0)
     }
 }
 
@@ -137,7 +145,7 @@ impl From<nssa_core::encryption::Ciphertext> for Ciphertext {
 
 impl From<Ciphertext> for nssa_core::encryption::Ciphertext {
     fn from(value: Ciphertext) -> Self {
-        nssa_core::encryption::Ciphertext::from_inner(value.0)
+        Self::from_inner(value.0)
     }
 }
 
@@ -149,7 +157,7 @@ impl From<nssa_core::encryption::EphemeralPublicKey> for EphemeralPublicKey {
 
 impl From<EphemeralPublicKey> for nssa_core::encryption::EphemeralPublicKey {
     fn from(value: EphemeralPublicKey) -> Self {
-        nssa_core::encryption::shared_key_derivation::Secp256k1Point(value.0)
+        Self(value.0)
     }
 }
 
@@ -167,7 +175,7 @@ impl From<nssa::Signature> for Signature {
 impl From<Signature> for nssa::Signature {
     fn from(value: Signature) -> Self {
         let Signature(sig_value) = value;
-        nssa::Signature { value: sig_value }
+        Self { value: sig_value }
     }
 }
 
@@ -181,7 +189,7 @@ impl TryFrom<PublicKey> for nssa::PublicKey {
     type Error = nssa::error::NssaError;
 
     fn try_from(value: PublicKey) -> Result<Self, Self::Error> {
-        nssa::PublicKey::try_new(value.0)
+        Self::try_new(value.0)
     }
 }
 
@@ -197,7 +205,7 @@ impl From<nssa::privacy_preserving_transaction::circuit::Proof> for Proof {
 
 impl From<Proof> for nssa::privacy_preserving_transaction::circuit::Proof {
     fn from(value: Proof) -> Self {
-        nssa::privacy_preserving_transaction::circuit::Proof::from_inner(value.0)
+        Self::from_inner(value.0)
     }
 }
 
@@ -244,7 +252,7 @@ impl From<nssa::public_transaction::Message> for PublicMessage {
         Self {
             program_id: program_id.into(),
             account_ids: account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces.iter().map(|x| x.0).collect(),
             instruction_data,
         }
     }
@@ -261,7 +269,10 @@ impl From<PublicMessage> for nssa::public_transaction::Message {
         Self::new_preserialized(
             program_id.into(),
             account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces
+                .iter()
+                .map(|x| nssa_core::account::Nonce(*x))
+                .collect(),
             instruction_data,
         )
     }
@@ -279,7 +290,7 @@ impl From<nssa::privacy_preserving_transaction::message::Message> for PrivacyPre
         } = value;
         Self {
             public_account_ids: public_account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces.iter().map(|x| x.0).collect(),
             public_post_states: public_post_states.into_iter().map(Into::into).collect(),
             encrypted_private_post_states: encrypted_private_post_states
                 .into_iter()
@@ -308,7 +319,10 @@ impl TryFrom<PrivacyPreservingMessage> for nssa::privacy_preserving_transaction:
         } = value;
         Ok(Self {
             public_account_ids: public_account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces
+                .iter()
+                .map(|x| nssa_core::account::Nonce(*x))
+                .collect(),
             public_post_states: public_post_states
                 .into_iter()
                 .map(TryInto::try_into)
@@ -345,12 +359,16 @@ impl From<ProgramDeploymentMessage> for nssa::program_deployment_transaction::Me
 // WitnessSet conversions
 // ============================================================================
 
-impl TryFrom<nssa::public_transaction::WitnessSet> for WitnessSet {
-    type Error = ();
-
-    fn try_from(_value: nssa::public_transaction::WitnessSet) -> Result<Self, Self::Error> {
-        // Public transaction witness sets don't have proofs, so we can't convert them directly
-        Err(())
+impl From<nssa::public_transaction::WitnessSet> for WitnessSet {
+    fn from(value: nssa::public_transaction::WitnessSet) -> Self {
+        Self {
+            signatures_and_public_keys: value
+                .signatures_and_public_keys()
+                .iter()
+                .map(|(sig, pk)| (sig.clone().into(), pk.clone().into()))
+                .collect(),
+            proof: None,
+        }
     }
 }
 
@@ -362,7 +380,7 @@ impl From<nssa::privacy_preserving_transaction::witness_set::WitnessSet> for Wit
                 .into_iter()
                 .map(|(sig, pk)| (sig.into(), pk.into()))
                 .collect(),
-            proof: proof.into(),
+            proof: Some(proof.into()),
         }
     }
 }
@@ -382,7 +400,9 @@ impl TryFrom<WitnessSet> for nssa::privacy_preserving_transaction::witness_set::
 
         Ok(Self::from_raw_parts(
             signatures_and_public_keys,
-            proof.into(),
+            proof
+                .map(Into::into)
+                .ok_or_else(|| nssa::error::NssaError::InvalidInput("Missing proof".to_owned()))?,
         ))
     }
 }
@@ -402,14 +422,7 @@ impl From<nssa::PublicTransaction> for PublicTransaction {
         Self {
             hash,
             message: message.into(),
-            witness_set: WitnessSet {
-                signatures_and_public_keys: witness_set
-                    .signatures_and_public_keys()
-                    .iter()
-                    .map(|(sig, pk)| (sig.clone().into(), pk.clone().into()))
-                    .collect(),
-                proof: Proof(vec![]), // Public transactions don't have proofs
-            },
+            witness_set: witness_set.into(),
         }
     }
 }
@@ -499,12 +512,12 @@ impl From<ProgramDeploymentTransaction> for nssa::ProgramDeploymentTransaction {
 impl From<common::transaction::NSSATransaction> for Transaction {
     fn from(value: common::transaction::NSSATransaction) -> Self {
         match value {
-            common::transaction::NSSATransaction::Public(tx) => Transaction::Public(tx.into()),
+            common::transaction::NSSATransaction::Public(tx) => Self::Public(tx.into()),
             common::transaction::NSSATransaction::PrivacyPreserving(tx) => {
-                Transaction::PrivacyPreserving(tx.into())
+                Self::PrivacyPreserving(tx.into())
             }
             common::transaction::NSSATransaction::ProgramDeployment(tx) => {
-                Transaction::ProgramDeployment(tx.into())
+                Self::ProgramDeployment(tx.into())
             }
         }
     }
@@ -515,15 +528,9 @@ impl TryFrom<Transaction> for common::transaction::NSSATransaction {
 
     fn try_from(value: Transaction) -> Result<Self, Self::Error> {
         match value {
-            Transaction::Public(tx) => {
-                Ok(common::transaction::NSSATransaction::Public(tx.try_into()?))
-            }
-            Transaction::PrivacyPreserving(tx) => Ok(
-                common::transaction::NSSATransaction::PrivacyPreserving(tx.try_into()?),
-            ),
-            Transaction::ProgramDeployment(tx) => Ok(
-                common::transaction::NSSATransaction::ProgramDeployment(tx.into()),
-            ),
+            Transaction::Public(tx) => Ok(Self::Public(tx.try_into()?)),
+            Transaction::PrivacyPreserving(tx) => Ok(Self::PrivacyPreserving(tx.try_into()?)),
+            Transaction::ProgramDeployment(tx) => Ok(Self::ProgramDeployment(tx.into())),
         }
     }
 }
@@ -677,6 +684,6 @@ impl From<common::HashType> for HashType {
 
 impl From<HashType> for common::HashType {
     fn from(value: HashType) -> Self {
-        common::HashType(value.0)
+        Self(value.0)
     }
 }

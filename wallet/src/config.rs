@@ -48,21 +48,19 @@ pub struct PersistentAccountDataPrivate {
 // Big difference in enum variants sizes
 // however it is improbable, that we will have that much accounts, that it will substantialy affect
 // memory
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InitialAccountData {
     Public(InitialAccountDataPublic),
-    Private(InitialAccountDataPrivate),
+    Private(Box<InitialAccountDataPrivate>),
 }
 
 // Big difference in enum variants sizes
 // however it is improbable, that we will have that much accounts, that it will substantialy affect
 // memory
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PersistentAccountData {
     Public(PersistentAccountDataPublic),
-    Private(PersistentAccountDataPrivate),
+    Private(Box<PersistentAccountDataPrivate>),
     Preconfigured(InitialAccountData),
 }
 
@@ -71,7 +69,8 @@ pub enum PersistentAccountData {
 pub struct Label(String);
 
 impl Label {
-    pub fn new(label: String) -> Self {
+    #[must_use]
+    pub const fn new(label: String) -> Self {
         Self(label)
     }
 }
@@ -87,13 +86,17 @@ pub struct PersistentStorage {
     pub accounts: Vec<PersistentAccountData>,
     pub last_synced_block: u64,
     /// Account labels keyed by account ID string (e.g.,
-    /// "2rnKprXqWGWJTkDZKsQbFXa4ctKRbapsdoTKQFnaVGG8")
+    /// "2rnKprXqWGWJTkDZKsQbFXa4ctKRbapsdoTKQFnaVGG8").
     #[serde(default)]
     pub labels: HashMap<String, Label>,
 }
 
 impl PersistentStorage {
     pub fn from_path(path: &Path) -> Result<Self> {
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "We want to provide a specific error message for not found case"
+        )]
         match std::fs::File::open(path) {
             Ok(file) => {
                 let storage_content = BufReader::new(file);
@@ -112,6 +115,7 @@ impl PersistentStorage {
 }
 
 impl InitialAccountData {
+    #[must_use]
     pub fn account_id(&self) -> nssa::AccountId {
         match &self {
             Self::Public(acc) => acc.account_id,
@@ -121,6 +125,7 @@ impl InitialAccountData {
 }
 
 impl PersistentAccountData {
+    #[must_use]
     pub fn account_id(&self) -> nssa::AccountId {
         match &self {
             Self::Public(acc) => acc.account_id,
@@ -138,7 +143,7 @@ impl From<InitialAccountDataPublic> for InitialAccountData {
 
 impl From<InitialAccountDataPrivate> for InitialAccountData {
     fn from(value: InitialAccountDataPrivate) -> Self {
-        Self::Private(value)
+        Self::Private(Box::new(value))
     }
 }
 
@@ -150,7 +155,7 @@ impl From<PersistentAccountDataPublic> for PersistentAccountData {
 
 impl From<PersistentAccountDataPrivate> for PersistentAccountData {
     fn from(value: PersistentAccountDataPrivate) -> Self {
-        Self::Private(value)
+        Self::Private(Box::new(value))
     }
 }
 
@@ -162,537 +167,106 @@ impl From<InitialAccountData> for PersistentAccountData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GasConfig {
-    /// Gas spent per deploying one byte of data
+    /// Gas spent per deploying one byte of data.
     pub gas_fee_per_byte_deploy: u64,
-    /// Gas spent per reading one byte of data in VM
+    /// Gas spent per reading one byte of data in VM.
     pub gas_fee_per_input_buffer_runtime: u64,
-    /// Gas spent per one byte of contract data in runtime
+    /// Gas spent per one byte of contract data in runtime.
     pub gas_fee_per_byte_runtime: u64,
-    /// Cost of one gas of runtime in public balance
+    /// Cost of one gas of runtime in public balance.
     pub gas_cost_runtime: u64,
-    /// Cost of one gas of deployment in public balance
+    /// Cost of one gas of deployment in public balance.
     pub gas_cost_deploy: u64,
-    /// Gas limit for deployment
+    /// Gas limit for deployment.
     pub gas_limit_deploy: u64,
-    /// Gas limit for runtime
+    /// Gas limit for runtime.
     pub gas_limit_runtime: u64,
 }
 
 #[optfield::optfield(pub WalletConfigOverrides, rewrap, attrs = (derive(Debug, Default, Clone)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletConfig {
-    /// Override rust log (env var logging level)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub override_rust_log: Option<String>,
-    /// Sequencer URL
+    /// Sequencer URL.
     pub sequencer_addr: Url,
-    /// Sequencer polling duration for new blocks
+    /// Sequencer polling duration for new blocks.
     #[serde(with = "humantime_serde")]
     pub seq_poll_timeout: Duration,
-    /// Sequencer polling max number of blocks to find transaction
+    /// Sequencer polling max number of blocks to find transaction.
     pub seq_tx_poll_max_blocks: usize,
-    /// Sequencer polling max number error retries
+    /// Sequencer polling max number error retries.
     pub seq_poll_max_retries: u64,
-    /// Max amount of blocks to poll in one request
+    /// Max amount of blocks to poll in one request.
     pub seq_block_poll_max_amount: u64,
-    /// Initial accounts for wallet
+    /// Initial accounts for wallet.
     pub initial_accounts: Vec<InitialAccountData>,
-    /// Basic authentication credentials
+    /// Basic authentication credentials.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub basic_auth: Option<BasicAuth>,
 }
 
 impl Default for WalletConfig {
     fn default() -> Self {
+        let pub_sign_key1 = nssa::PrivateKey::try_new([
+            127, 39, 48, 152, 242, 91, 113, 230, 192, 5, 169, 81, 159, 38, 120, 218, 141, 28, 127,
+            1, 246, 162, 119, 120, 226, 217, 148, 138, 189, 249, 1, 251,
+        ])
+        .unwrap();
+        let public_key1 = nssa::PublicKey::new_from_private_key(&pub_sign_key1);
+        let public_account_id1 = nssa::AccountId::from(&public_key1);
+
+        let pub_sign_key2 = nssa::PrivateKey::try_new([
+            244, 52, 248, 116, 23, 32, 1, 69, 134, 174, 67, 53, 109, 42, 236, 98, 87, 218, 8, 98,
+            34, 246, 4, 221, 183, 93, 105, 115, 59, 134, 252, 76,
+        ])
+        .unwrap();
+        let public_key2 = nssa::PublicKey::new_from_private_key(&pub_sign_key2);
+        let public_account_id2 = nssa::AccountId::from(&public_key2);
+
+        let key_chain1 = KeyChain::new_mnemonic("default_private_account_1".to_owned());
+        let private_account_id1 = nssa::AccountId::from(&key_chain1.nullifier_public_key);
+
+        let key_chain2 = KeyChain::new_mnemonic("default_private_account_2".to_owned());
+        let private_account_id2 = nssa::AccountId::from(&key_chain2.nullifier_public_key);
+
         Self {
-            override_rust_log: None,
             sequencer_addr: "http://127.0.0.1:3040".parse().unwrap(),
             seq_poll_timeout: Duration::from_secs(12),
             seq_tx_poll_max_blocks: 5,
             seq_poll_max_retries: 5,
             seq_block_poll_max_amount: 100,
             basic_auth: None,
-            initial_accounts: {
-                let init_acc_json = r#"
- [
-        {
-            "Public": {
-                "account_id": "jZvdpERLqEkzk6CAz6vDuDJ1wx5aoyFpDa1VFmRvuPX",
-                "pub_sign_key": [
-                    157,
-                    102,
-                    173,
-                    116,
-                    76,
-                    167,
-                    130,
-                    165,
-                    77,
-                    104,
-                    14,
-                    233,
-                    114,
-                    43,
-                    180,
-                    98,
-                    59,
-                    187,
-                    165,
-                    28,
-                    80,
-                    130,
-                    126,
-                    164,
-                    224,
-                    181,
-                    203,
-                    53,
-                    31,
-                    168,
-                    169,
-                    23
-                ]
-            }
-        },
-        {
-            "Public": {
-                "account_id": "3jQfsyRyvVpBfdkZegf8QpjfcDq1M5RAXB4H4eJ4kTtf",
-                "pub_sign_key": [
-                    230,
-                    17,
-                    4,
-                    52,
-                    87,
-                    162,
-                    72,
-                    137,
-                    119,
-                    205,
-                    163,
-                    211,
-                    118,
-                    157,
-                    15,
-                    164,
-                    67,
-                    12,
-                    124,
-                    50,
-                    159,
-                    23,
-                    184,
-                    6,
-                    109,
-                    154,
-                    2,
-                    219,
-                    147,
-                    239,
-                    125,
-                    20
-                ]
-            }
-        },
-        {
-            "Private": {
-                "account_id": "HWkW5qd4XK3me6sCAb4bfPj462k33DjtKtEcYpuzNwB",
-                "account": {
-                    "program_owner": [
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0
-                    ],
-                    "balance": 10000,
-                    "data": [],
-                    "nonce": 0
-                },
-                "key_chain": {
-                    "secret_spending_key": [
-                        14,
-                        202,
-                        241,
-                        109,
-                        32,
-                        181,
-                        152,
-                        140,
-                        76,
-                        153,
-                        108,
-                        57,
-                        77,
-                        192,
-                        181,
-                        97,
-                        108,
-                        144,
-                        122,
-                        45,
-                        219,
-                        5,
-                        203,
-                        193,
-                        82,
-                        123,
-                        83,
-                        34,
-                        250,
-                        214,
-                        137,
-                        63
-                    ],
-                    "private_key_holder": {
-                        "nullifier_secret_key": [
-                            174,
-                            56,
-                            101,
-                            30,
-                            248,
-                            249,
-                            100,
-                            0,
-                            122,
-                            199,
-                            209,
-                            246,
-                            58,
-                            163,
-                            223,
-                            146,
-                            59,
-                            143,
-                            78,
-                            95,
-                            41,
-                            186,
-                            106,
-                            187,
-                            53,
-                            63,
-                            75,
-                            244,
-                            233,
-                            185,
-                            110,
-                            199
-                        ],
-                        "viewing_secret_key": [
-                            251,
-                            85,
-                            223,
-                            73,
-                            142,
-                            127,
-                            134,
-                            132,
-                            185,
-                            210,
-                            100,
-                            103,
-                            198,
-                            108,
-                            229,
-                            80,
-                            176,
-                            211,
-                            249,
-                            114,
-                            110,
-                            7,
-                            225,
-                            17,
-                            7,
-                            69,
-                            204,
-                            32,
-                            47,
-                            242,
-                            103,
-                            247
-                        ]
+            initial_accounts: vec![
+                InitialAccountData::Public(InitialAccountDataPublic {
+                    account_id: public_account_id1,
+                    pub_sign_key: pub_sign_key1,
+                }),
+                InitialAccountData::Public(InitialAccountDataPublic {
+                    account_id: public_account_id2,
+                    pub_sign_key: pub_sign_key2,
+                }),
+                InitialAccountData::Private(Box::new(InitialAccountDataPrivate {
+                    account_id: private_account_id1,
+                    account: nssa::Account {
+                        balance: 10_000,
+                        ..Default::default()
                     },
-                    "nullifier_public_key": [
-                        139,
-                        19,
-                        158,
-                        11,
-                        155,
-                        231,
-                        85,
-                        206,
-                        132,
-                        228,
-                        220,
-                        114,
-                        145,
-                        89,
-                        113,
-                        156,
-                        238,
-                        142,
-                        242,
-                        74,
-                        182,
-                        91,
-                        43,
-                        100,
-                        6,
-                        190,
-                        31,
-                        15,
-                        31,
-                        88,
-                        96,
-                        204
-                    ],
-                    "viewing_public_key": [
-                        3,
-                        136,
-                        153,
-                        50,
-                        191,
-                        184,
-                        135,
-                        36,
-                        29,
-                        107,
-                        57,
-                        9,
-                        218,
-                        135,
-                        249,
-                        213,
-                        118,
-                        215,
-                        118,
-                        173,
-                        30,
-                        137,
-                        116,
-                        77,
-                        17,
-                        86,
-                        62,
-                        154,
-                        31,
-                        173,
-                        19,
-                        167,
-                        211
-                    ]
-                }
-            }
-        },
-        {
-            "Private": {
-                "account_id": "HUpbRQ1vEcZv5y6TDYv9tpt1VA64ji2v4RDLJfK2rpZn",
-                "account": {
-                    "program_owner": [
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0
-                    ],
-                    "balance": 20000,
-                    "data": [],
-                    "nonce": 0
-                },
-                "key_chain": {
-                    "secret_spending_key": [
-                        32,
-                        162,
-                        244,
-                        221,
-                        2,
-                        133,
-                        168,
-                        250,
-                        240,
-                        52,
-                        92,
-                        187,
-                        157,
-                        116,
-                        249,
-                        203,
-                        143,
-                        194,
-                        214,
-                        112,
-                        115,
-                        142,
-                        153,
-                        78,
-                        241,
-                        173,
-                        103,
-                        242,
-                        192,
-                        196,
-                        29,
-                        133
-                    ],
-                    "private_key_holder": {
-                        "nullifier_secret_key": [
-                            188,
-                            235,
-                            121,
-                            54,
-                            131,
-                            206,
-                            7,
-                            215,
-                            94,
-                            231,
-                            102,
-                            22,
-                            12,
-                            27,
-                            253,
-                            161,
-                            248,
-                            206,
-                            41,
-                            160,
-                            206,
-                            149,
-                            5,
-                            217,
-                            127,
-                            235,
-                            154,
-                            230,
-                            198,
-                            232,
-                            102,
-                            31
-                        ],
-                        "viewing_secret_key": [
-                            89,
-                            116,
-                            140,
-                            122,
-                            211,
-                            179,
-                            190,
-                            229,
-                            18,
-                            94,
-                            56,
-                            235,
-                            48,
-                            99,
-                            104,
-                            228,
-                            111,
-                            72,
-                            231,
-                            18,
-                            247,
-                            97,
-                            110,
-                            60,
-                            238,
-                            138,
-                            0,
-                            25,
-                            92,
-                            44,
-                            30,
-                            145
-                        ]
+                    key_chain: key_chain1,
+                })),
+                InitialAccountData::Private(Box::new(InitialAccountDataPrivate {
+                    account_id: private_account_id2,
+                    account: nssa::Account {
+                        balance: 20_000,
+                        ..Default::default()
                     },
-                    "nullifier_public_key": [
-                        173,
-                        134,
-                        33,
-                        223,
-                        54,
-                        226,
-                        10,
-                        71,
-                        215,
-                        254,
-                        143,
-                        172,
-                        24,
-                        244,
-                        243,
-                        208,
-                        65,
-                        112,
-                        118,
-                        70,
-                        217,
-                        240,
-                        69,
-                        100,
-                        129,
-                        3,
-                        121,
-                        25,
-                        213,
-                        132,
-                        42,
-                        45
-                    ],
-                    "viewing_public_key": [
-                        2,
-                        43,
-                        42,
-                        253,
-                        112,
-                        83,
-                        195,
-                        164,
-                        26,
-                        141,
-                        92,
-                        28,
-                        224,
-                        120,
-                        155,
-                        119,
-                        225,
-                        1,
-                        45,
-                        42,
-                        245,
-                        172,
-                        134,
-                        136,
-                        52,
-                        183,
-                        170,
-                        96,
-                        115,
-                        212,
-                        114,
-                        120,
-                        37
-                    ]
-                }
-            }
-        }
-    ]
-                   "#;
-                serde_json::from_str(init_acc_json).unwrap()
-            },
+                    key_chain: key_chain2,
+                })),
+            ],
         }
     }
 }
 
 impl WalletConfig {
-    pub fn from_path_or_initialize_default(config_path: &Path) -> Result<WalletConfig> {
+    pub fn from_path_or_initialize_default(config_path: &Path) -> Result<Self> {
         match std::fs::File::open(config_path) {
             Ok(file) => {
                 let reader = std::io::BufReader::new(file);
@@ -703,12 +277,13 @@ impl WalletConfig {
 
                 let config_home = config_path.parent().ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Could not get parent directory of config file at {config_path:#?}"
+                        "Could not get parent directory of config file at {}",
+                        config_path.display()
                     )
                 })?;
                 std::fs::create_dir_all(config_home)?;
 
-                println!("Created configs dir at path {config_home:#?}");
+                println!("Created configs dir at path {}", config_home.display());
 
                 let mut file = std::fs::OpenOptions::new()
                     .write(true)
@@ -716,7 +291,7 @@ impl WalletConfig {
                     .truncate(true)
                     .open(config_path)?;
 
-                let config = WalletConfig::default();
+                let config = Self::default();
                 let default_config_serialized = serde_json::to_vec_pretty(&config).unwrap();
 
                 file.write_all(&default_config_serialized)?;
@@ -729,8 +304,7 @@ impl WalletConfig {
     }
 
     pub fn apply_overrides(&mut self, overrides: WalletConfigOverrides) {
-        let WalletConfig {
-            override_rust_log,
+        let Self {
             sequencer_addr,
             seq_poll_timeout,
             seq_tx_poll_max_blocks,
@@ -741,7 +315,6 @@ impl WalletConfig {
         } = self;
 
         let WalletConfigOverrides {
-            override_rust_log: o_override_rust_log,
             sequencer_addr: o_sequencer_addr,
             seq_poll_timeout: o_seq_poll_timeout,
             seq_tx_poll_max_blocks: o_seq_tx_poll_max_blocks,
@@ -751,10 +324,6 @@ impl WalletConfig {
             basic_auth: o_basic_auth,
         } = overrides;
 
-        if let Some(v) = o_override_rust_log {
-            warn!("Overriding wallet config 'override_rust_log' to {v:#?}");
-            *override_rust_log = v;
-        }
         if let Some(v) = o_sequencer_addr {
             warn!("Overriding wallet config 'sequencer_addr' to {v}");
             *sequencer_addr = v;

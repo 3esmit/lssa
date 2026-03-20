@@ -1,12 +1,19 @@
+#![expect(
+    clippy::as_conversions,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::Duration;
 
 use anyhow::Result;
 use bytesize::ByteSize;
-use common::{block::HashableBlockData, transaction::NSSATransaction};
+use common::transaction::NSSATransaction;
 use integration_tests::{
     TIME_TO_WAIT_FOR_BLOCK_SECONDS, TestContext, config::SequencerPartialConfig,
 };
 use nssa::program::Program;
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
 
 #[test]
@@ -24,13 +31,16 @@ async fn reject_oversized_transaction() -> Result<()> {
     // Create a transaction that's definitely too large
     // Block size is 1 MiB (1,048,576 bytes), minus ~200 bytes for header = ~1,048,376 bytes max tx
     // Create a 1.1 MiB binary to ensure it exceeds the limit
-    let oversized_binary = vec![0u8; 1100 * 1024]; // 1.1 MiB binary
+    let oversized_binary = vec![0_u8; 1100 * 1024]; // 1.1 MiB binary
 
     let message = nssa::program_deployment_transaction::Message::new(oversized_binary);
     let tx = nssa::ProgramDeploymentTransaction::new(message);
 
     // Try to submit the transaction and expect an error
-    let result = ctx.sequencer_client().send_tx_program(tx).await;
+    let result = ctx
+        .sequencer_client()
+        .send_transaction(NSSATransaction::ProgramDeployment(tx))
+        .await;
 
     assert!(
         result.is_err(),
@@ -38,13 +48,12 @@ async fn reject_oversized_transaction() -> Result<()> {
     );
 
     let err = result.unwrap_err();
-    let err_str = format!("{:?}", err);
+    let err_str = format!("{err:?}");
 
     // Check if the error contains information about transaction being too large
     assert!(
         err_str.contains("TransactionTooLarge") || err_str.contains("too large"),
-        "Expected TransactionTooLarge error, got: {}",
-        err_str
+        "Expected TransactionTooLarge error, got: {err_str}"
     );
 
     Ok(())
@@ -63,13 +72,16 @@ async fn accept_transaction_within_limit() -> Result<()> {
         .await?;
 
     // Create a small program deployment that should fit
-    let small_binary = vec![0u8; 1024]; // 1 KiB binary
+    let small_binary = vec![0_u8; 1024]; // 1 KiB binary
 
     let message = nssa::program_deployment_transaction::Message::new(small_binary);
     let tx = nssa::ProgramDeploymentTransaction::new(message);
 
     // This should succeed
-    let result = ctx.sequencer_client().send_tx_program(tx).await;
+    let result = ctx
+        .sequencer_client()
+        .send_transaction(NSSATransaction::ProgramDeployment(tx))
+        .await;
 
     assert!(
         result.is_ok(),
@@ -107,33 +119,38 @@ async fn transaction_deferred_to_next_block_when_current_full() -> Result<()> {
     let burner_id = Program::new(burner_bytecode.clone())?.id();
     let chain_caller_id = Program::new(chain_caller_bytecode.clone())?.id();
 
-    let initial_block_height = ctx.sequencer_client().get_last_block().await?.last_block;
+    let initial_block_height = ctx.sequencer_client().get_last_block_id().await?;
 
     // Submit both program deployments
     ctx.sequencer_client()
-        .send_tx_program(nssa::ProgramDeploymentTransaction::new(
-            nssa::program_deployment_transaction::Message::new(burner_bytecode),
+        .send_transaction(NSSATransaction::ProgramDeployment(
+            nssa::ProgramDeploymentTransaction::new(
+                nssa::program_deployment_transaction::Message::new(burner_bytecode),
+            ),
         ))
         .await?;
 
     ctx.sequencer_client()
-        .send_tx_program(nssa::ProgramDeploymentTransaction::new(
-            nssa::program_deployment_transaction::Message::new(chain_caller_bytecode),
+        .send_transaction(NSSATransaction::ProgramDeployment(
+            nssa::ProgramDeploymentTransaction::new(
+                nssa::program_deployment_transaction::Message::new(chain_caller_bytecode),
+            ),
         ))
         .await?;
 
     // Wait for first block
     tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
 
-    let block1_response = ctx
+    let block1 = ctx
         .sequencer_client()
         .get_block(initial_block_height + 1)
-        .await?;
-    let block1: HashableBlockData = borsh::from_slice(&block1_response.block)?;
+        .await?
+        .unwrap();
 
     // Check which program is in block 1
-    let get_program_ids = |block: &HashableBlockData| -> Vec<nssa::ProgramId> {
+    let get_program_ids = |block: &common::block::Block| -> Vec<nssa::ProgramId> {
         block
+            .body
             .transactions
             .iter()
             .filter_map(|tx| {
@@ -163,11 +180,11 @@ async fn transaction_deferred_to_next_block_when_current_full() -> Result<()> {
     // Wait for second block
     tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
 
-    let block2_response = ctx
+    let block2 = ctx
         .sequencer_client()
         .get_block(initial_block_height + 2)
-        .await?;
-    let block2: HashableBlockData = borsh::from_slice(&block2_response.block)?;
+        .await?
+        .unwrap();
     let block2_program_ids = get_program_ids(&block2);
 
     // The other program should be in block 2

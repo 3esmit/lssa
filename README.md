@@ -12,7 +12,7 @@ Public accounts are stored on-chain as a visible map from IDs to account states,
 
 ### Programmability and selective privacy
 
-LEZ aims to deliver full programmability in a hybrid public/private model, with the same flexibility and composability as public blockchains. Developers write and deploy programs in LEZ just as they would elsewhere. The protocol automatically supports executions that involve any combination of public and private accounts. From the program’s perspective, all accounts look the same, and privacy is enforced transparently. This lets developers focus on business logic while the system guarantees privacy and correctness.
+LEZ aims to deliver full programmability in a hybrid public/private model, with the same flexibility and composability as public blockchains. Developers write and deploy programs in LEZ without addressing privacy concerns. The protocol automatically supports executions that involve any combination of public and private accounts. From the program’s perspective, all accounts look the same, and privacy is enforced transparently. This lets developers focus on business logic while the system guarantees privacy and correctness.
 
 To our knowledge, this design is unique to LEZ. Other privacy-focused programmable blockchains often require developers to explicitly handle private inputs inside their app logic. In LEZ, privacy is protocol-level: programs do not change, accounts are treated uniformly, and private execution works out of the box.
 
@@ -71,6 +71,17 @@ This design keeps public transactions as fast as any RISC-V–based VM and makes
 
 ---
 ---
+---
+
+# Versioning
+
+We release versions as git tags (e.g. `v0.1.0`). If no critical issues with version is found you can expect it to be immutable. All further features and fixes will be a part of the next tag. As the project is in active development we don't provide backward compatibility yet.
+For each tag we publish docker images of our services.
+If you depend on this project you can pin your rust dependency to a git tag like this:
+
+```toml
+nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.1.0" }
+```
 
 # Install dependencies
 ### Install build dependencies
@@ -130,36 +141,38 @@ RUST_LOG=info RISC0_DEV_MODE=1 cargo run $(pwd)/configs/debug all
 ```
 
 # Run the sequencer and node
-
-
 ## Running Manually
 ### Normal mode
 The sequencer and logos blockchain node can be run locally:
  1. On one terminal go to the `logos-blockchain/logos-blockchain` repo and run a local logos blockchain node:
-      - `git checkout master; git pull`
-      - `cargo clean`
-      - `rm -r ~/.logos-blockchain-circuits`
-      - `./scripts/setup-logos-blockchain-circuits.sh`
-      - `cargo build --all-features`
-      - `./target/debug/logos-blockchain-node --deployment nodes/node/standalone-deployment-config.yaml nodes/node/standalone-node-config.yaml`
+    - `git checkout master; git pull`
+    - `cargo clean`
+    - `rm -r ~/.logos-blockchain-circuits`
+    - `./scripts/setup-logos-blockchain-circuits.sh`
+    - `cargo build --all-features`
+    - `./target/debug/logos-blockchain-node --deployment nodes/node/standalone-deployment-config.yaml nodes/node/standalone-node-config.yaml`
 
- 2. Alternatively (WARNING: This node is outdated) go to ``logos-blockchain/lssa/` repo and run the node from docker:
-      - `cd bedrock`
-      - Change line 14 of `docker-compose.yml` from `"0:18080/tcp"` into `"8080:18080/tcp"`
-      - `docker compose up`
+ - Alternatively (WARNING: This node is outdated) go to `logos-blockchain/lssa/` repo and run the node from docker:
+    - `cd bedrock`
+    - Change line 14 of `docker-compose.yml` from `"0:18080/tcp"` into `"8080:18080/tcp"`
+    - `docker compose up`
 
- 3. On another terminal go to the `logos-blockchain/lssa` repo and run indexer service:
+ 2. On another terminal go to the `logos-blockchain/lssa` repo and run indexer service:
       - `RUST_LOG=info cargo run -p indexer_service indexer/service/configs/indexer_config.json`
 
- 4. On another terminal go to the `logos-blockchain/lssa` repo and run the sequencer:
-      - `RUST_LOG=info cargo run -p sequencer_runner sequencer_runner/configs/debug`
+ 3. On another terminal go to the `logos-blockchain/lssa` repo and run the sequencer:
+      - `RUST_LOG=info cargo run -p sequencer_service sequencer/service/configs/debug/sequencer_config.json`
+ 4. (To run the explorer): on another terminal go to `logos-blockchain/lssa/explorer_service` and run the following:
+      - `cargo install cargo-leptos`
+      - `cargo leptos build --release`
+      - `cargo leptos serve --release`
 
 ### Notes on cleanup
 
 After stopping services above you need to remove 3 folders to start cleanly:
  1. In the `logos-blockchain/logos-blockchain` folder `state` (not needed in case of docker setup)
- 2. In the `lssa` folder `sequencer_runner/rocksdb`
- 3. In the `lssa` file `sequencer_runner/bedrock_signing_key`
+ 2. In the `lssa` folder `sequencer/service/rocksdb`
+ 3. In the `lssa` file `sequencer/service/bedrock_signing_key`
  4. In the `lssa` folder `indexer/service/rocksdb`
 
 ### Normal mode (`just` commands)
@@ -207,7 +220,7 @@ This will use a wallet binary built from this repo and not the one installed in 
 ### Standalone mode
 The sequencer can be run in standalone mode with:
 ```bash
-RUST_LOG=info cargo run --features standalone -p sequencer_runner sequencer_runner/configs/debug
+RUST_LOG=info cargo run --features standalone -p sequencer_service sequencer/service/configs/debug
 ```
 
 ## Running with Docker

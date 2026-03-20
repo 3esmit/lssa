@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Commitment, CommitmentSetDigest, MembershipProof, Nullifier, NullifierPublicKey,
     NullifierSecretKey, SharedSecretKey,
-    account::{Account, AccountWithMetadata, Nonce},
+    account::{Account, AccountWithMetadata},
     encryption::Ciphertext,
     program::{ProgramId, ProgramOutput},
 };
@@ -18,8 +18,6 @@ pub struct PrivacyPreservingCircuitInput {
     /// - `1` - private account with authentication
     /// - `2` - private account without authentication
     pub visibility_mask: Vec<u8>,
-    /// Nonces of private accounts.
-    pub private_account_nonces: Vec<Nonce>,
     /// Public keys of private accounts.
     pub private_account_keys: Vec<(NullifierPublicKey, SharedSecretKey)>,
     /// Nullifier secret keys for authorized private accounts.
@@ -42,6 +40,8 @@ pub struct PrivacyPreservingCircuitOutput {
 
 #[cfg(feature = "host")]
 impl PrivacyPreservingCircuitOutput {
+    /// Serializes the circuit output to a byte vector.
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         bytemuck::cast_slice(&risc0_zkvm::serde::to_vec(&self).unwrap()).to_vec()
     }
@@ -55,19 +55,19 @@ mod tests {
     use super::*;
     use crate::{
         Commitment, Nullifier, NullifierPublicKey,
-        account::{Account, AccountId, AccountWithMetadata},
+        account::{Account, AccountId, AccountWithMetadata, Nonce},
     };
 
     #[test]
-    fn test_privacy_preserving_circuit_output_to_bytes_is_compatible_with_from_slice() {
+    fn privacy_preserving_circuit_output_to_bytes_is_compatible_with_from_slice() {
         let output = PrivacyPreservingCircuitOutput {
             public_pre_states: vec![
                 AccountWithMetadata::new(
                     Account {
                         program_owner: [1, 2, 3, 4, 5, 6, 7, 8],
-                        balance: 12345678901234567890,
+                        balance: 12_345_678_901_234_567_890,
                         data: b"test data".to_vec().try_into().unwrap(),
-                        nonce: 18446744073709551614,
+                        nonce: Nonce(0xFFFF_FFFF_FFFF_FFFE),
                     },
                     true,
                     AccountId::new([0; 32]),
@@ -75,9 +75,9 @@ mod tests {
                 AccountWithMetadata::new(
                     Account {
                         program_owner: [9, 9, 9, 8, 8, 8, 7, 7],
-                        balance: 123123123456456567112,
+                        balance: 123_123_123_456_456_567_112,
                         data: b"test data".to_vec().try_into().unwrap(),
-                        nonce: 9999999999999999999999,
+                        nonce: Nonce(9_999_999_999_999_999_999_999),
                     },
                     false,
                     AccountId::new([1; 32]),
@@ -87,7 +87,7 @@ mod tests {
                 program_owner: [1, 2, 3, 4, 5, 6, 7, 8],
                 balance: 100,
                 data: b"post state data".to_vec().try_into().unwrap(),
-                nonce: 18446744073709551615,
+                nonce: Nonce(0xFFFF_FFFF_FFFF_FFFF),
             }],
             ciphertexts: vec![Ciphertext(vec![255, 255, 1, 1, 2, 2])],
             new_commitments: vec![Commitment::new(

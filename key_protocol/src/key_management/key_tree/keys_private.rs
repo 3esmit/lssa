@@ -1,4 +1,4 @@
-use k256::{Scalar, elliptic_curve::PrimeField};
+use k256::{Scalar, elliptic_curve::PrimeField as _};
 use nssa_core::{NullifierPublicKey, encryption::ViewingPublicKey};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ use crate::key_management::{
 pub struct ChildKeysPrivate {
     pub value: (KeyChain, nssa::Account),
     pub ccc: [u8; 32],
-    /// Can be [`None`] if root
+    /// Can be [`None`] if root.
     pub cci: Option<u32>,
 }
 
@@ -54,6 +54,7 @@ impl KeyNode for ChildKeysPrivate {
     }
 
     fn nth_child(&self, cci: u32) -> Self {
+        #[expect(clippy::arithmetic_side_effects, reason = "TODO: fix later")]
         let parent_pt =
             Scalar::from_repr(self.value.0.private_key_holder.nullifier_secret_key.into())
                 .expect("Key generated as scalar, must be valid representation")
@@ -63,6 +64,7 @@ impl KeyNode for ChildKeysPrivate {
 
         input.extend_from_slice(b"LEE_seed_priv");
         input.extend_from_slice(&parent_pt.to_bytes());
+        #[expect(clippy::big_endian_bytes, reason = "BIP-032 uses big endian")]
         input.extend_from_slice(&cci.to_be_bytes());
 
         let hash_value = hmac_sha512::HMAC::mac(input, self.ccc);
@@ -113,12 +115,20 @@ impl KeyNode for ChildKeysPrivate {
     }
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "TODO add meaningful name"
+)]
 impl<'a> From<&'a ChildKeysPrivate> for &'a (KeyChain, nssa::Account) {
     fn from(value: &'a ChildKeysPrivate) -> Self {
         &value.value
     }
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "TODO add meaningful name"
+)]
 impl<'a> From<&'a mut ChildKeysPrivate> for &'a mut (KeyChain, nssa::Account) {
     fn from(value: &'a mut ChildKeysPrivate) -> Self {
         &mut value.value
@@ -127,13 +137,13 @@ impl<'a> From<&'a mut ChildKeysPrivate> for &'a mut (KeyChain, nssa::Account) {
 
 #[cfg(test)]
 mod tests {
-    use nssa_core::{NullifierPublicKey, NullifierSecretKey};
+    use nssa_core::NullifierSecretKey;
 
     use super::*;
     use crate::key_management::{self, secret_holders::ViewingSecretKey};
 
     #[test]
-    fn test_master_key_generation() {
+    fn master_key_generation() {
         let seed: [u8; 64] = [
             252, 56, 204, 83, 232, 123, 209, 188, 187, 167, 39, 213, 71, 39, 58, 65, 125, 134, 255,
             49, 43, 108, 92, 53, 173, 164, 94, 142, 150, 74, 21, 163, 43, 144, 226, 87, 199, 18,
@@ -143,7 +153,7 @@ mod tests {
 
         let keys = ChildKeysPrivate::root(seed);
 
-        let expected_ssk: SecretSpendingKey = key_management::secret_holders::SecretSpendingKey([
+        let expected_ssk = key_management::secret_holders::SecretSpendingKey([
             246, 79, 26, 124, 135, 95, 52, 51, 201, 27, 48, 194, 2, 144, 51, 219, 245, 128, 139,
             222, 42, 195, 105, 33, 115, 97, 186, 0, 97, 14, 218, 191,
         ]);
@@ -158,11 +168,11 @@ mod tests {
             34, 234, 19, 222, 2, 22, 12, 163, 252, 88, 11, 0, 163,
         ];
 
-        let expected_npk: NullifierPublicKey = nssa_core::NullifierPublicKey([
+        let expected_npk = nssa_core::NullifierPublicKey([
             7, 123, 125, 191, 233, 183, 201, 4, 20, 214, 155, 210, 45, 234, 27, 240, 194, 111, 97,
             247, 155, 113, 122, 246, 192, 0, 70, 61, 76, 71, 70, 2,
         ]);
-        let expected_vsk: ViewingSecretKey = [
+        let expected_vsk = [
             155, 90, 54, 75, 228, 130, 68, 201, 129, 251, 180, 195, 250, 64, 34, 230, 241, 204,
             216, 50, 149, 156, 10, 67, 208, 74, 9, 10, 47, 59, 50, 202,
         ];
@@ -181,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn test_child_keys_generation() {
+    fn child_keys_generation() {
         let seed: [u8; 64] = [
             252, 56, 204, 83, 232, 123, 209, 188, 187, 167, 39, 213, 71, 39, 58, 65, 125, 134, 255,
             49, 43, 108, 92, 53, 173, 164, 94, 142, 150, 74, 21, 163, 43, 144, 226, 87, 199, 18,
@@ -190,7 +200,7 @@ mod tests {
         ];
 
         let root_node = ChildKeysPrivate::root(seed);
-        let child_node = ChildKeysPrivate::nth_child(&root_node, 42u32);
+        let child_node = ChildKeysPrivate::nth_child(&root_node, 42_u32);
 
         let expected_ccc: [u8; 32] = [
             27, 73, 133, 213, 214, 63, 217, 184, 164, 17, 172, 140, 223, 95, 255, 157, 11, 0, 58,
@@ -201,7 +211,7 @@ mod tests {
             124, 61, 40, 92, 33, 135, 3, 41, 200, 234, 3, 69, 102, 184, 57, 191, 106, 151, 194,
             192, 103, 132, 141, 112, 249, 108, 192, 117, 24, 48, 70, 216,
         ];
-        let expected_npk: NullifierPublicKey = nssa_core::NullifierPublicKey([
+        let expected_npk = nssa_core::NullifierPublicKey([
             116, 231, 246, 189, 145, 240, 37, 59, 219, 223, 216, 246, 116, 171, 223, 55, 197, 200,
             134, 192, 221, 40, 218, 167, 239, 5, 11, 95, 147, 247, 162, 226,
         ]);

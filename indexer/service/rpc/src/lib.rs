@@ -30,30 +30,36 @@ pub trait Rpc {
     async fn get_last_finalized_block_id(&self) -> Result<BlockId, ErrorObjectOwned>;
 
     #[method(name = "getBlockById")]
-    async fn get_block_by_id(&self, block_id: BlockId) -> Result<Block, ErrorObjectOwned>;
+    async fn get_block_by_id(&self, block_id: BlockId) -> Result<Option<Block>, ErrorObjectOwned>;
 
     #[method(name = "getBlockByHash")]
-    async fn get_block_by_hash(&self, block_hash: HashType) -> Result<Block, ErrorObjectOwned>;
+    async fn get_block_by_hash(
+        &self,
+        block_hash: HashType,
+    ) -> Result<Option<Block>, ErrorObjectOwned>;
 
     #[method(name = "getAccount")]
     async fn get_account(&self, account_id: AccountId) -> Result<Account, ErrorObjectOwned>;
 
     #[method(name = "getTransaction")]
-    async fn get_transaction(&self, tx_hash: HashType) -> Result<Transaction, ErrorObjectOwned>;
+    async fn get_transaction(
+        &self,
+        tx_hash: HashType,
+    ) -> Result<Option<Transaction>, ErrorObjectOwned>;
 
     #[method(name = "getBlocks")]
     async fn get_blocks(
         &self,
-        before: Option<u64>,
-        limit: u32,
+        before: Option<BlockId>,
+        limit: u64,
     ) -> Result<Vec<Block>, ErrorObjectOwned>;
 
     #[method(name = "getTransactionsByAccount")]
     async fn get_transactions_by_account(
         &self,
         account_id: AccountId,
-        limit: u32,
-        offset: u32,
+        offset: u64,
+        limit: u64,
     ) -> Result<Vec<Transaction>, ErrorObjectOwned>;
 
     // ToDo: expand healthcheck response into some kind of report

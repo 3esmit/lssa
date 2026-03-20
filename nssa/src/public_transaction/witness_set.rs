@@ -8,6 +8,7 @@ pub struct WitnessSet {
 }
 
 impl WitnessSet {
+    #[must_use]
     pub fn for_message(message: &Message, private_keys: &[&PrivateKey]) -> Self {
         let message_bytes = message.to_bytes();
         let signatures_and_public_keys = private_keys
@@ -24,6 +25,7 @@ impl WitnessSet {
         }
     }
 
+    #[must_use]
     pub fn is_valid_for(&self, message: &Message) -> bool {
         let message_bytes = message.to_bytes();
         for (signature, public_key) in self.signatures_and_public_keys() {
@@ -34,15 +36,18 @@ impl WitnessSet {
         true
     }
 
+    #[must_use]
     pub fn signatures_and_public_keys(&self) -> &[(Signature, PublicKey)] {
         &self.signatures_and_public_keys
     }
 
+    #[must_use]
     pub fn into_raw_parts(self) -> Vec<(Signature, PublicKey)> {
         self.signatures_and_public_keys
     }
 
-    pub fn from_raw_parts(signatures_and_public_keys: Vec<(Signature, PublicKey)>) -> Self {
+    #[must_use]
+    pub const fn from_raw_parts(signatures_and_public_keys: Vec<(Signature, PublicKey)>) -> Self {
         Self {
             signatures_and_public_keys,
         }
@@ -55,14 +60,14 @@ mod tests {
     use crate::AccountId;
 
     #[test]
-    fn test_for_message_constructor() {
+    fn for_message_constructor() {
         let key1 = PrivateKey::try_new([1; 32]).unwrap();
         let key2 = PrivateKey::try_new([2; 32]).unwrap();
         let pubkey1 = PublicKey::new_from_private_key(&key1);
         let pubkey2 = PublicKey::new_from_private_key(&key2);
         let addr1 = AccountId::from(&pubkey1);
         let addr2 = AccountId::from(&pubkey2);
-        let nonces = vec![1, 2];
+        let nonces = vec![1_u128.into(), 2_u128.into()];
         let instruction = vec![1, 2, 3, 4];
         let message = Message::try_new([0; 8], vec![addr1, addr2], nonces, instruction).unwrap();
 

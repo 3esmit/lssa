@@ -1,7 +1,19 @@
+#![expect(
+    clippy::arithmetic_side_effects,
+    clippy::float_arithmetic,
+    clippy::missing_asserts_for_indexing,
+    clippy::as_conversions,
+    clippy::tests_outside_test_module,
+    clippy::integer_division,
+    clippy::integer_division_remainder_used,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use bytesize::ByteSize;
+use common::transaction::NSSATransaction;
 use integration_tests::{
     TestContext,
     config::{InitialData, SequencerPartialConfig},
@@ -16,83 +28,11 @@ use nssa::{
 };
 use nssa_core::{
     MembershipProof, NullifierPublicKey,
-    account::{AccountWithMetadata, data::Data},
+    account::{AccountWithMetadata, Nonce, data::Data},
     encryption::ViewingPublicKey,
 };
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
-
-// TODO: Make a proper benchmark instead of an ad-hoc test
-#[test]
-pub async fn tps_test() -> Result<()> {
-    let num_transactions = 300 * 5;
-    let target_tps = 8;
-
-    let tps_test = TpsTestManager::new(target_tps, num_transactions);
-    let ctx = TestContext::builder()
-        .with_sequencer_partial_config(TpsTestManager::generate_sequencer_partial_config())
-        .with_initial_data(tps_test.generate_initial_data())
-        .build()
-        .await?;
-
-    let target_time = tps_test.target_time();
-    info!(
-        "TPS test begin. Target time is {target_time:?} for {num_transactions} transactions ({target_tps} TPS)"
-    );
-
-    let txs = tps_test.build_public_txs();
-    let now = Instant::now();
-
-    let mut tx_hashes = vec![];
-    for (i, tx) in txs.into_iter().enumerate() {
-        let tx_hash = ctx
-            .sequencer_client()
-            .send_tx_public(tx)
-            .await
-            .unwrap()
-            .tx_hash;
-        info!("Sent tx {i}");
-        tx_hashes.push(tx_hash);
-    }
-
-    for (i, tx_hash) in tx_hashes.iter().enumerate() {
-        loop {
-            if now.elapsed().as_millis() > target_time.as_millis() {
-                panic!("TPS test failed by timeout");
-            }
-
-            let tx_obj = ctx
-                .sequencer_client()
-                .get_transaction_by_hash(*tx_hash)
-                .await
-                .inspect_err(|err| {
-                    log::warn!("Failed to get transaction by hash {tx_hash} with error: {err:#?}")
-                });
-
-            if let Ok(tx_obj) = tx_obj
-                && tx_obj.transaction.is_some()
-            {
-                info!("Found tx {i} with hash {tx_hash}");
-                break;
-            }
-        }
-    }
-    let time_elapsed = now.elapsed().as_secs();
-
-    let tx_processed = tx_hashes.len();
-    let actual_tps = tx_processed as u64 / time_elapsed;
-    info!("Processed {tx_processed} transactions in {time_elapsed:?} ({actual_tps} TPS)",);
-
-    assert_eq!(tx_processed, num_transactions);
-
-    assert!(
-        time_elapsed <= target_time.as_secs(),
-        "Elapsed time {time_elapsed:?} exceeded target time {target_time:?}"
-    );
-
-    info!("TPS test finished successfully");
-
-    Ok(())
-}
 
 pub(crate) struct TpsTestManager {
     public_keypairs: Vec<(PrivateKey, AccountId)>,
@@ -105,7 +45,7 @@ impl TpsTestManager {
     pub(crate) fn new(target_tps: u64, number_transactions: usize) -> Self {
         let public_keypairs = (1..(number_transactions + 2))
             .map(|i| {
-                let mut private_key_bytes = [0u8; 32];
+                let mut private_key_bytes = [0_u8; 32];
                 private_key_bytes[..8].copy_from_slice(&i.to_le_bytes());
                 let private_key = PrivateKey::try_new(private_key_bytes).unwrap();
                 let public_key = PublicKey::new_from_private_key(&private_key);
@@ -119,6 +59,10 @@ impl TpsTestManager {
         }
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "This is just for testing purposes, we don't care about precision loss here"
+    )]
     pub(crate) fn target_time(&self) -> Duration {
         let number_transactions = (self.public_keypairs.len() - 1) as u64;
         Duration::from_secs_f64(number_transactions as f64 / self.target_tps as f64)
@@ -136,7 +80,7 @@ impl TpsTestManager {
                 let message = putx::Message::try_new(
                     program.id(),
                     [pair[0].1, pair[1].1].to_vec(),
-                    [0u128].to_vec(),
+                    [Nonce(0_u128)].to_vec(),
                     amount,
                 )
                 .unwrap();
@@ -165,7 +109,7 @@ impl TpsTestManager {
         let key_chain = KeyChain::new_os_random();
         let account = Account {
             balance: 100,
-            nonce: 0xdeadbeef,
+            nonce: Nonce(0xdead_beef),
             program_owner: Program::authenticated_transfer_program().id(),
             data: Data::default(),
         };
@@ -176,7 +120,7 @@ impl TpsTestManager {
         }
     }
 
-    fn generate_sequencer_partial_config() -> SequencerPartialConfig {
+    const fn generate_sequencer_partial_config() -> SequencerPartialConfig {
         SequencerPartialConfig {
             max_num_tx_in_block: 300,
             max_block_size: ByteSize::mb(500),
@@ -184,6 +128,77 @@ impl TpsTestManager {
             block_create_timeout: Duration::from_secs(12),
         }
     }
+}
+
+// TODO: Make a proper benchmark instead of an ad-hoc test
+#[test]
+pub async fn tps_test() -> Result<()> {
+    let num_transactions = 300 * 5;
+    let target_tps = 8;
+
+    let tps_test = TpsTestManager::new(target_tps, num_transactions);
+    let ctx = TestContext::builder()
+        .with_sequencer_partial_config(TpsTestManager::generate_sequencer_partial_config())
+        .with_initial_data(tps_test.generate_initial_data())
+        .build()
+        .await?;
+
+    let target_time = tps_test.target_time();
+    info!(
+        "TPS test begin. Target time is {target_time:?} for {num_transactions} transactions ({target_tps} TPS)"
+    );
+
+    let txs = tps_test.build_public_txs();
+    let now = Instant::now();
+
+    let mut tx_hashes = vec![];
+    for (i, tx) in txs.into_iter().enumerate() {
+        let tx_hash = ctx
+            .sequencer_client()
+            .send_transaction(NSSATransaction::Public(tx))
+            .await
+            .unwrap();
+        info!("Sent tx {i}");
+        tx_hashes.push(tx_hash);
+    }
+
+    for (i, tx_hash) in tx_hashes.iter().enumerate() {
+        loop {
+            assert!(
+                now.elapsed().as_millis() <= target_time.as_millis(),
+                "TPS test failed by timeout"
+            );
+
+            let tx_obj = ctx
+                .sequencer_client()
+                .get_transaction(*tx_hash)
+                .await
+                .inspect_err(|err| {
+                    log::warn!("Failed to get transaction by hash {tx_hash} with error: {err:#?}");
+                });
+
+            if tx_obj.is_ok_and(|opt| opt.is_some()) {
+                info!("Found tx {i} with hash {tx_hash}");
+                break;
+            }
+        }
+    }
+    let time_elapsed = now.elapsed().as_secs();
+
+    let tx_processed = tx_hashes.len();
+    let actual_tps = tx_processed as u64 / time_elapsed;
+    info!("Processed {tx_processed} transactions in {time_elapsed:?} ({actual_tps} TPS)",);
+
+    assert_eq!(tx_processed, num_transactions);
+
+    assert!(
+        time_elapsed <= target_time.as_secs(),
+        "Elapsed time {time_elapsed:?} exceeded target time {target_time:?}"
+    );
+
+    info!("TPS test finished successfully");
+
+    Ok(())
 }
 
 /// Builds a single privacy transaction to use in stress tests. This involves generating a proof so
@@ -200,7 +215,7 @@ fn build_privacy_transaction() -> PrivacyPreservingTransaction {
     let sender_pre = AccountWithMetadata::new(
         Account {
             balance: 100,
-            nonce: 0xdeadbeef,
+            nonce: Nonce(0xdead_beef),
             program_owner: program.id(),
             data: Data::default(),
         },
@@ -234,7 +249,6 @@ fn build_privacy_transaction() -> PrivacyPreservingTransaction {
         vec![sender_pre, recipient_pre],
         Program::serialize_instruction(balance_to_move).unwrap(),
         vec![1, 2],
-        vec![0xdeadbeef1, 0xdeadbeef2],
         vec![
             (sender_npk.clone(), sender_ss),
             (recipient_npk.clone(), recipient_ss),

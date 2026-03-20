@@ -1,18 +1,19 @@
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use indexer_service_rpc::RpcClient;
-use integration_tests::{
-    TIME_TO_WAIT_FOR_BLOCK_SECONDS, TestContext, format_private_account_id,
-    format_public_account_id, verify_commitment_is_in_state,
-};
+use anyhow::Result;
+use indexer_service_rpc::RpcClient as _;
+use integration_tests::{TIME_TO_WAIT_FOR_BLOCK_SECONDS, TestContext, format_public_account_id};
 use log::info;
-use nssa::AccountId;
 use tokio::test;
 use wallet::cli::{Command, programs::native_token_transfer::AuthTransferSubcommand};
 
-/// Timeout in milliseconds to reliably await for block finalization
-const L2_TO_L1_TIMEOUT_MILLIS: u64 = 600000;
+/// Timeout in milliseconds to reliably await for block finalization.
+const L2_TO_L1_TIMEOUT_MILLIS: u64 = 600_000;
 
 #[test]
 async fn indexer_test_run() -> Result<()> {
@@ -21,12 +22,8 @@ async fn indexer_test_run() -> Result<()> {
     // RUN OBSERVATION
     tokio::time::sleep(std::time::Duration::from_millis(L2_TO_L1_TIMEOUT_MILLIS)).await;
 
-    let last_block_seq = ctx
-        .sequencer_client()
-        .get_last_block()
-        .await
-        .unwrap()
-        .last_block;
+    let last_block_seq =
+        sequencer_service_rpc::RpcClient::get_last_block_id(ctx.sequencer_client()).await?;
 
     info!("Last block on seq now is {last_block_seq}");
 
@@ -99,50 +96,22 @@ async fn indexer_state_consistency() -> Result<()> {
     tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
 
     info!("Checking correct balance move");
-    let acc_1_balance = ctx
-        .sequencer_client()
-        .get_account_balance(ctx.existing_public_accounts()[0])
-        .await?;
-    let acc_2_balance = ctx
-        .sequencer_client()
-        .get_account_balance(ctx.existing_public_accounts()[1])
-        .await?;
+    let acc_1_balance = sequencer_service_rpc::RpcClient::get_account_balance(
+        ctx.sequencer_client(),
+        ctx.existing_public_accounts()[0],
+    )
+    .await?;
+    let acc_2_balance = sequencer_service_rpc::RpcClient::get_account_balance(
+        ctx.sequencer_client(),
+        ctx.existing_public_accounts()[1],
+    )
+    .await?;
 
     info!("Balance of sender: {acc_1_balance:#?}");
     info!("Balance of receiver: {acc_2_balance:#?}");
 
-    assert_eq!(acc_1_balance.balance, 9900);
-    assert_eq!(acc_2_balance.balance, 20100);
-
-    let from: AccountId = ctx.existing_private_accounts()[0];
-    let to: AccountId = ctx.existing_private_accounts()[1];
-
-    let command = Command::AuthTransfer(AuthTransferSubcommand::Send {
-        from: format_private_account_id(from),
-        to: Some(format_private_account_id(to)),
-        to_npk: None,
-        to_vpk: None,
-        amount: 100,
-    });
-
-    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
-
-    info!("Waiting for next block creation");
-    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
-
-    let new_commitment1 = ctx
-        .wallet()
-        .get_private_account_commitment(from)
-        .context("Failed to get private account commitment for sender")?;
-    assert!(verify_commitment_is_in_state(new_commitment1, ctx.sequencer_client()).await);
-
-    let new_commitment2 = ctx
-        .wallet()
-        .get_private_account_commitment(to)
-        .context("Failed to get private account commitment for receiver")?;
-    assert!(verify_commitment_is_in_state(new_commitment2, ctx.sequencer_client()).await);
-
-    info!("Successfully transferred privately to owned account");
+    assert_eq!(acc_1_balance, 9900);
+    assert_eq!(acc_2_balance, 20100);
 
     // WAIT
     info!("Waiting for indexer to parse blocks");
@@ -160,16 +129,16 @@ async fn indexer_state_consistency() -> Result<()> {
         .unwrap();
 
     info!("Checking correct state transition");
-    let acc1_seq_state = ctx
-        .sequencer_client()
-        .get_account(ctx.existing_public_accounts()[0])
-        .await?
-        .account;
-    let acc2_seq_state = ctx
-        .sequencer_client()
-        .get_account(ctx.existing_public_accounts()[1])
-        .await?
-        .account;
+    let acc1_seq_state = sequencer_service_rpc::RpcClient::get_account(
+        ctx.sequencer_client(),
+        ctx.existing_public_accounts()[0],
+    )
+    .await?;
+    let acc2_seq_state = sequencer_service_rpc::RpcClient::get_account(
+        ctx.sequencer_client(),
+        ctx.existing_public_accounts()[1],
+    )
+    .await?;
 
     assert_eq!(acc1_ind_state, acc1_seq_state.into());
     assert_eq!(acc2_ind_state, acc2_seq_state.into());

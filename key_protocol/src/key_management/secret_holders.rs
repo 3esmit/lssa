@@ -10,16 +10,16 @@ use sha2::{Digest as _, digest::FixedOutput as _};
 
 const NSSA_ENTROPY_BYTES: [u8; 32] = [0; 32];
 
-#[derive(Debug)]
 /// Seed holder. Non-clonable to ensure that different holders use different seeds.
 /// Produces `TopSecretKeyHolder` objects.
+#[derive(Debug)]
 pub struct SeedHolder {
     // ToDo: Needs to be vec as serde derives is not implemented for [u8; 64]
     pub(crate) seed: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Secret spending key object. Can produce `PrivateKeyHolder` objects.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct SecretSpendingKey(pub(crate) [u8; 32]);
 
 pub type ViewingSecretKey = Scalar;
@@ -79,6 +79,7 @@ impl SeedHolder {
 
 impl SecretSpendingKey {
     #[must_use]
+    #[expect(clippy::big_endian_bytes, reason = "BIP-032 uses big endian")]
     pub fn generate_nullifier_secret_key(&self, index: Option<u32>) -> NullifierSecretKey {
         const PREFIX: &[u8; 8] = b"LEE/keys";
         const SUFFIX_1: &[u8; 1] = &[1];
@@ -93,13 +94,14 @@ impl SecretSpendingKey {
         hasher.update(PREFIX);
         hasher.update(self.0);
         hasher.update(SUFFIX_1);
-        hasher.update(index.to_le_bytes());
+        hasher.update(index.to_be_bytes());
         hasher.update(SUFFIX_2);
 
         <NullifierSecretKey>::from(hasher.finalize_fixed())
     }
 
     #[must_use]
+    #[expect(clippy::big_endian_bytes, reason = "BIP-032 uses big endian")]
     pub fn generate_viewing_secret_key(&self, index: Option<u32>) -> ViewingSecretKey {
         const PREFIX: &[u8; 8] = b"LEE/keys";
         const SUFFIX_1: &[u8; 1] = &[2];
@@ -114,7 +116,7 @@ impl SecretSpendingKey {
         hasher.update(PREFIX);
         hasher.update(self.0);
         hasher.update(SUFFIX_1);
-        hasher.update(index.to_le_bytes());
+        hasher.update(index.to_be_bytes());
         hasher.update(SUFFIX_2);
 
         hasher.finalize_fixed().into()

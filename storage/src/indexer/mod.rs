@@ -262,7 +262,7 @@ mod tests {
         let is_first_set = dbio.get_meta_is_first_block_set().unwrap();
         let last_observed_l1_header = dbio.get_meta_last_observed_l1_lib_header_in_db().unwrap();
         let last_br_id = dbio.get_meta_last_breakpoint_id().unwrap();
-        let last_block = dbio.get_block(1).unwrap();
+        let last_block = dbio.get_block(1).unwrap().unwrap();
         let breakpoint = dbio.get_breakpoint(0).unwrap();
         let final_state = dbio.final_state().unwrap();
 
@@ -313,7 +313,7 @@ mod tests {
             .unwrap();
         let is_first_set = dbio.get_meta_is_first_block_set().unwrap();
         let last_br_id = dbio.get_meta_last_breakpoint_id().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
         let breakpoint = dbio.get_breakpoint(0).unwrap();
         let final_state = dbio.final_state().unwrap();
 
@@ -353,7 +353,7 @@ mod tests {
 
         for i in 1..=BREAKPOINT_INTERVAL {
             let last_id = dbio.get_meta_last_block_in_db().unwrap();
-            let last_block = dbio.get_block(last_id).unwrap();
+            let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
             let prev_hash = last_block.header.hash;
 
@@ -376,7 +376,7 @@ mod tests {
         let first_id = dbio.get_meta_first_block_in_db().unwrap();
         let is_first_set = dbio.get_meta_is_first_block_set().unwrap();
         let last_br_id = dbio.get_meta_last_breakpoint_id().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
         let prev_breakpoint = dbio.get_breakpoint(0).unwrap();
         let breakpoint = dbio.get_breakpoint(1).unwrap();
         let final_state = dbio.final_state().unwrap();
@@ -425,7 +425,7 @@ mod tests {
         let sign_key = acc1_sign_key();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -437,7 +437,7 @@ mod tests {
         dbio.put_block(&block, [1; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -449,7 +449,7 @@ mod tests {
         dbio.put_block(&block, [2; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -461,7 +461,7 @@ mod tests {
         dbio.put_block(&block, [3; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -472,10 +472,16 @@ mod tests {
         let block = common::test_utils::produce_dummy_block(5, Some(prev_hash), vec![transfer_tx]);
         dbio.put_block(&block, [4; 32]).unwrap();
 
-        let control_block_id1 = dbio.get_block_id_by_hash(control_hash1.0).unwrap();
-        let control_block_id2 = dbio.get_block_id_by_hash(control_hash2.0).unwrap();
-        let control_block_id3 = dbio.get_block_id_by_tx_hash(control_tx_hash1.0).unwrap();
-        let control_block_id4 = dbio.get_block_id_by_tx_hash(control_tx_hash2.0).unwrap();
+        let control_block_id1 = dbio.get_block_id_by_hash(control_hash1.0).unwrap().unwrap();
+        let control_block_id2 = dbio.get_block_id_by_hash(control_hash2.0).unwrap().unwrap();
+        let control_block_id3 = dbio
+            .get_block_id_by_tx_hash(control_tx_hash1.0)
+            .unwrap()
+            .unwrap();
+        let control_block_id4 = dbio
+            .get_block_id_by_tx_hash(control_tx_hash2.0)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(control_block_id1, 2);
         assert_eq!(control_block_id2, 3);
@@ -502,7 +508,7 @@ mod tests {
         let sign_key = acc1_sign_key();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -513,7 +519,7 @@ mod tests {
         dbio.put_block(&block, [1; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -524,7 +530,7 @@ mod tests {
         dbio.put_block(&block, [2; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -535,7 +541,7 @@ mod tests {
         dbio.put_block(&block, [3; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =
@@ -600,7 +606,7 @@ mod tests {
         let mut tx_hash_res = vec![];
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx1 =
@@ -619,7 +625,7 @@ mod tests {
         dbio.put_block(&block, [1; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx1 =
@@ -638,7 +644,7 @@ mod tests {
         dbio.put_block(&block, [2; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx1 =
@@ -657,7 +663,7 @@ mod tests {
         dbio.put_block(&block, [3; 32]).unwrap();
 
         let last_id = dbio.get_meta_last_block_in_db().unwrap();
-        let last_block = dbio.get_block(last_id).unwrap();
+        let last_block = dbio.get_block(last_id).unwrap().unwrap();
 
         let prev_hash = last_block.header.hash;
         let transfer_tx =

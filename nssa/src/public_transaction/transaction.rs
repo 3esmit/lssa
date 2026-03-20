@@ -269,7 +269,7 @@ pub mod tests {
 
     fn transaction_for_tests() -> PublicTransaction {
         let (key1, key2, addr1, addr2) = keys_for_tests();
-        let nonces = vec![0, 0];
+        let nonces = vec![0_u128.into(), 0_u128.into()];
         let instruction = 1337;
         let message = Message::try_new(
             Program::authenticated_transfer_program().id(),
@@ -347,7 +347,7 @@ pub mod tests {
     fn account_id_list_cant_have_duplicates() {
         let (key1, _, addr1, _) = keys_for_tests();
         let state = state_for_tests();
-        let nonces = vec![0, 0];
+        let nonces = vec![0_u128.into(), 0_u128.into()];
         let instruction = 1337;
         let message = Message::try_new(
             Program::authenticated_transfer_program().id(),
@@ -367,7 +367,7 @@ pub mod tests {
     fn number_of_nonces_must_match_number_of_signatures() {
         let (key1, key2, addr1, addr2) = keys_for_tests();
         let state = state_for_tests();
-        let nonces = vec![0];
+        let nonces = vec![0_u128.into()];
         let instruction = 1337;
         let message = Message::try_new(
             Program::authenticated_transfer_program().id(),
@@ -387,7 +387,7 @@ pub mod tests {
     fn all_signatures_must_be_valid() {
         let (key1, key2, addr1, addr2) = keys_for_tests();
         let state = state_for_tests();
-        let nonces = vec![0, 0];
+        let nonces = vec![0_u128.into(), 0_u128.into()];
         let instruction = 1337;
         let message = Message::try_new(
             Program::authenticated_transfer_program().id(),
@@ -408,7 +408,7 @@ pub mod tests {
     fn nonces_must_match_the_state_current_nonces() {
         let (key1, key2, addr1, addr2) = keys_for_tests();
         let state = state_for_tests();
-        let nonces = vec![0, 1];
+        let nonces = vec![0_u128.into(), 1_u128.into()];
         let instruction = 1337;
         let message = Message::try_new(
             Program::authenticated_transfer_program().id(),
@@ -428,7 +428,7 @@ pub mod tests {
     fn program_id_must_belong_to_bulitin_program_ids() {
         let (key1, key2, addr1, addr2) = keys_for_tests();
         let state = state_for_tests();
-        let nonces = vec![0, 0];
+        let nonces = vec![0_u128.into(), 0_u128.into()];
         let instruction = 1337;
         let unknown_program_id = [0xdead_beef; 8];
         let message =

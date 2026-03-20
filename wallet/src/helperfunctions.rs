@@ -44,7 +44,7 @@ impl From<Account> for HumanReadableAccount {
             balance: account.balance,
             program_owner,
             data,
-            nonce: account.nonce,
+            nonce: account.nonce.0,
         }
     }
 }
@@ -145,12 +145,16 @@ pub fn produce_data_for_storage(
     }
 }
 
+#[expect(dead_code, reason = "Maybe used later")]
 pub(crate) fn produce_random_nonces(size: usize) -> Vec<Nonce> {
     let mut result = vec![[0; 16]; size];
     for bytes in &mut result {
         OsRng.fill_bytes(bytes);
     }
-    result.into_iter().map(Nonce::from_le_bytes).collect()
+    result
+        .into_iter()
+        .map(|x| Nonce(u128::from_le_bytes(x)))
+        .collect()
 }
 
 pub(crate) fn parse_addr_with_privacy_prefix(

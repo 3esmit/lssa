@@ -1,5 +1,7 @@
 //! Conversions between `indexer_service_protocol` types and `nssa/nssa_core` types.
 
+use nssa_core::account::Nonce;
+
 use crate::{
     Account, AccountId, BedrockStatus, Block, BlockBody, BlockHeader, Ciphertext, Commitment,
     CommitmentSetDigest, Data, EncryptedAccountData, EphemeralPublicKey, HashType, MantleMsgId,
@@ -52,7 +54,7 @@ impl From<nssa_core::account::Account> for Account {
             program_owner: program_owner.into(),
             balance,
             data: data.into(),
-            nonce,
+            nonce: nonce.0,
         }
     }
 }
@@ -72,7 +74,7 @@ impl TryFrom<Account> for nssa_core::account::Account {
             program_owner: program_owner.into(),
             balance,
             data: data.try_into()?,
-            nonce,
+            nonce: Nonce(nonce),
         })
     }
 }
@@ -250,7 +252,7 @@ impl From<nssa::public_transaction::Message> for PublicMessage {
         Self {
             program_id: program_id.into(),
             account_ids: account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces.iter().map(|x| x.0).collect(),
             instruction_data,
         }
     }
@@ -267,7 +269,10 @@ impl From<PublicMessage> for nssa::public_transaction::Message {
         Self::new_preserialized(
             program_id.into(),
             account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces
+                .iter()
+                .map(|x| nssa_core::account::Nonce(*x))
+                .collect(),
             instruction_data,
         )
     }
@@ -285,7 +290,7 @@ impl From<nssa::privacy_preserving_transaction::message::Message> for PrivacyPre
         } = value;
         Self {
             public_account_ids: public_account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces.iter().map(|x| x.0).collect(),
             public_post_states: public_post_states.into_iter().map(Into::into).collect(),
             encrypted_private_post_states: encrypted_private_post_states
                 .into_iter()
@@ -314,7 +319,10 @@ impl TryFrom<PrivacyPreservingMessage> for nssa::privacy_preserving_transaction:
         } = value;
         Ok(Self {
             public_account_ids: public_account_ids.into_iter().map(Into::into).collect(),
-            nonces,
+            nonces: nonces
+                .iter()
+                .map(|x| nssa_core::account::Nonce(*x))
+                .collect(),
             public_post_states: public_post_states
                 .into_iter()
                 .map(TryInto::try_into)
@@ -351,12 +359,16 @@ impl From<ProgramDeploymentMessage> for nssa::program_deployment_transaction::Me
 // WitnessSet conversions
 // ============================================================================
 
-impl TryFrom<nssa::public_transaction::WitnessSet> for WitnessSet {
-    type Error = ();
-
-    fn try_from(_value: nssa::public_transaction::WitnessSet) -> Result<Self, Self::Error> {
-        // Public transaction witness sets don't have proofs, so we can't convert them directly
-        Err(())
+impl From<nssa::public_transaction::WitnessSet> for WitnessSet {
+    fn from(value: nssa::public_transaction::WitnessSet) -> Self {
+        Self {
+            signatures_and_public_keys: value
+                .signatures_and_public_keys()
+                .iter()
+                .map(|(sig, pk)| (sig.clone().into(), pk.clone().into()))
+                .collect(),
+            proof: None,
+        }
     }
 }
 
@@ -368,7 +380,7 @@ impl From<nssa::privacy_preserving_transaction::witness_set::WitnessSet> for Wit
                 .into_iter()
                 .map(|(sig, pk)| (sig.into(), pk.into()))
                 .collect(),
-            proof: proof.into(),
+            proof: Some(proof.into()),
         }
     }
 }
@@ -388,7 +400,9 @@ impl TryFrom<WitnessSet> for nssa::privacy_preserving_transaction::witness_set::
 
         Ok(Self::from_raw_parts(
             signatures_and_public_keys,
-            proof.into(),
+            proof
+                .map(Into::into)
+                .ok_or_else(|| nssa::error::NssaError::InvalidInput("Missing proof".to_owned()))?,
         ))
     }
 }
@@ -408,14 +422,7 @@ impl From<nssa::PublicTransaction> for PublicTransaction {
         Self {
             hash,
             message: message.into(),
-            witness_set: WitnessSet {
-                signatures_and_public_keys: witness_set
-                    .signatures_and_public_keys()
-                    .iter()
-                    .map(|(sig, pk)| (sig.clone().into(), pk.clone().into()))
-                    .collect(),
-                proof: Proof(vec![]), // Public transactions don't have proofs
-            },
+            witness_set: witness_set.into(),
         }
     }
 }

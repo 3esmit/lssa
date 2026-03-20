@@ -491,7 +491,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
     );
     assert_eq!(account.balance, 10000);
     assert!(account.data.is_empty());
-    assert_eq!(account.nonce, 0);
+    assert_eq!(account.nonce.0, 0);
 
     unsafe {
         wallet_ffi_free_account_data(&raw mut out_account);
@@ -528,7 +528,7 @@ fn test_wallet_ffi_get_account_private() -> Result<()> {
     );
     assert_eq!(account.balance, 10000);
     assert!(account.data.is_empty());
-    assert_eq!(account.nonce, 0);
+    assert_eq!(account.nonce, 0_u128.into());
 
     unsafe {
         wallet_ffi_free_account_data(&raw mut out_account);
@@ -606,7 +606,7 @@ fn test_wallet_ffi_get_private_account_keys() -> Result<()> {
         .unwrap()
         .0;
 
-    let expected_npk = &key_chain.nullifer_public_key;
+    let expected_npk = &key_chain.nullifier_public_key;
     let expected_vpk = &key_chain.viewing_public_key;
 
     assert_eq!(&keys.npk(), expected_npk);

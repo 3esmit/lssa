@@ -28,8 +28,7 @@ impl FromStr for PublicKey {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut bytes = [0_u8; 32];
-        hex::decode_to_slice(s, &mut bytes)
-            .map_err(|_err| NssaError::InvalidPublicKey(secp256k1::Error::InvalidPublicKey))?;
+        hex::decode_to_slice(s, &mut bytes).map_err(NssaError::InvalidHexPublicKey)?;
         Self::try_new(bytes)
     }
 }

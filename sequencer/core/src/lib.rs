@@ -15,7 +15,7 @@ use logos_blockchain_key_management_system_service::keys::{ED25519_SECRET_KEY_SI
 use mempool::{MemPool, MemPoolHandle};
 #[cfg(feature = "mock")]
 pub use mock::SequencerCoreWithMockClients;
-use nssa::V02State;
+use nssa::V03State;
 pub use storage::error::DbError;
 use testnet_initial_state::initial_state;
 
@@ -37,7 +37,7 @@ pub struct SequencerCore<
     BC: BlockSettlementClientTrait = BlockSettlementClient,
     IC: IndexerClientTrait = IndexerClient,
 > {
-    state: nssa::V02State,
+    state: nssa::V03State,
     store: SequencerStore,
     mempool: MemPool<NSSATransaction>,
     sequencer_config: SequencerConfig,
@@ -135,7 +135,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
             // If initial commitments or accounts are present in config, need to construct state
             // from them
             if initial_commitments.is_some() || init_accs.is_some() {
-                V02State::new_with_genesis_accounts(
+                V03State::new_with_genesis_accounts(
                     &init_accs.unwrap_or_default(),
                     &initial_commitments.unwrap_or_default(),
                 )
@@ -302,7 +302,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
         Ok((tx, msg_id))
     }
 
-    pub const fn state(&self) -> &nssa::V02State {
+    pub const fn state(&self) -> &nssa::V03State {
         &self.state
     }
 

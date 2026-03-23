@@ -3,7 +3,7 @@ use key_protocol::key_management::{
     KeyChain,
     secret_holders::{PrivateKeyHolder, SecretSpendingKey},
 };
-use nssa::{Account, AccountId, Data, PrivateKey, PublicKey, V02State};
+use nssa::{Account, AccountId, Data, PrivateKey, PublicKey, V03State};
 use nssa_core::{NullifierPublicKey, encryption::shared_key_derivation::Secp256k1Point};
 use serde::{Deserialize, Serialize};
 
@@ -195,7 +195,7 @@ pub fn initial_accounts() -> Vec<PublicAccountPublicInitialData> {
 }
 
 #[must_use]
-pub fn initial_state() -> V02State {
+pub fn initial_state() -> V03State {
     let initial_commitments: Vec<nssa_core::Commitment> = initial_commitments()
         .iter()
         .map(|init_comm_data| {
@@ -214,11 +214,11 @@ pub fn initial_state() -> V02State {
         .map(|acc_data| (acc_data.account_id, acc_data.balance))
         .collect();
 
-    nssa::V02State::new_with_genesis_accounts(&init_accs, &initial_commitments)
+    nssa::V03State::new_with_genesis_accounts(&init_accs, &initial_commitments)
 }
 
 #[must_use]
-pub fn initial_state_testnet() -> V02State {
+pub fn initial_state_testnet() -> V03State {
     let mut state = initial_state();
 
     state.add_pinata_program(PINATA_BASE58.parse().unwrap());

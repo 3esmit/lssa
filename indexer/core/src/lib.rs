@@ -11,7 +11,7 @@ use logos_blockchain_core::mantle::{
     Op, SignedMantleTx,
     ops::channel::{ChannelId, inscribe::InscriptionOp},
 };
-use nssa::V02State;
+use nssa::V03State;
 use testnet_initial_state::initial_state_testnet;
 
 use crate::{block_store::IndexerStore, config::IndexerConfig};
@@ -89,7 +89,7 @@ impl IndexerCore {
         // If initial commitments or accounts are present in config, need to construct state from
         // them
         let state = if initial_commitments.is_some() || init_accs.is_some() {
-            let mut state = V02State::new_with_genesis_accounts(
+            let mut state = V03State::new_with_genesis_accounts(
                 &init_accs.unwrap_or_default(),
                 &initial_commitments.unwrap_or_default(),
             );

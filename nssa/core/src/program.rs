@@ -180,8 +180,8 @@ impl ValidityWindow {
         }
     }
 
-    /// Valid for block IDs in the range [from, to) and timestamps in [from_timestamp,
-    /// to_timestamp).
+    /// Valid for block IDs in the range [from, to) and timestamps in [`from_timestamp`,
+    /// `to_timestamp`).
     #[must_use]
     pub fn is_valid_for(&self, block_id: BlockId, timestamp_ms: Timestamp) -> bool {
         self.from.is_none_or(|start| block_id >= start)

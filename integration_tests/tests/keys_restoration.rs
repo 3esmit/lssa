@@ -1,3 +1,9 @@
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::{str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
@@ -8,6 +14,7 @@ use integration_tests::{
 use key_protocol::key_management::key_tree::chain_index::ChainIndex;
 use log::info;
 use nssa::{AccountId, program::Program};
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
 use wallet::cli::{
     Command, SubcommandReturnValue,
@@ -313,8 +320,8 @@ async fn restore_keys_from_seed() -> Result<()> {
         .get_account_balance(to_account_id4)
         .await?;
 
-    assert_eq!(acc3.balance, 91); // 102 - 11
-    assert_eq!(acc4.balance, 114); // 103 + 11
+    assert_eq!(acc3, 91); // 102 - 11
+    assert_eq!(acc4, 114); // 103 + 11
 
     info!("Successfully restored keys and verified transactions");
 

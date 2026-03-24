@@ -256,3 +256,97 @@ async fn initialize_public_account() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+async fn successful_transfer_using_from_label() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Assign a label to the sender account
+    let label = "sender-label".to_owned();
+    let command = Command::Account(AccountSubcommand::Label {
+        account_id: Some(format_public_account_id(ctx.existing_public_accounts()[0])),
+        account_label: None,
+        label: label.clone(),
+    });
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    // Send using the label instead of account ID
+    let command = Command::AuthTransfer(AuthTransferSubcommand::Send {
+        from: None,
+        from_label: Some(label),
+        to: Some(format_public_account_id(ctx.existing_public_accounts()[1])),
+        to_label: None,
+        to_npk: None,
+        to_vpk: None,
+        amount: 100,
+    });
+
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    info!("Checking correct balance move");
+    let acc_1_balance = ctx
+        .sequencer_client()
+        .get_account_balance(ctx.existing_public_accounts()[0])
+        .await?;
+    let acc_2_balance = ctx
+        .sequencer_client()
+        .get_account_balance(ctx.existing_public_accounts()[1])
+        .await?;
+
+    assert_eq!(acc_1_balance, 9900);
+    assert_eq!(acc_2_balance, 20100);
+
+    info!("Successfully transferred using from_label");
+
+    Ok(())
+}
+
+#[test]
+async fn successful_transfer_using_to_label() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Assign a label to the receiver account
+    let label = "receiver-label".to_owned();
+    let command = Command::Account(AccountSubcommand::Label {
+        account_id: Some(format_public_account_id(ctx.existing_public_accounts()[1])),
+        account_label: None,
+        label: label.clone(),
+    });
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    // Send using the label for the recipient
+    let command = Command::AuthTransfer(AuthTransferSubcommand::Send {
+        from: Some(format_public_account_id(ctx.existing_public_accounts()[0])),
+        from_label: None,
+        to: None,
+        to_label: Some(label),
+        to_npk: None,
+        to_vpk: None,
+        amount: 100,
+    });
+
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    info!("Checking correct balance move");
+    let acc_1_balance = ctx
+        .sequencer_client()
+        .get_account_balance(ctx.existing_public_accounts()[0])
+        .await?;
+    let acc_2_balance = ctx
+        .sequencer_client()
+        .get_account_balance(ctx.existing_public_accounts()[1])
+        .await?;
+
+    assert_eq!(acc_1_balance, 9900);
+    assert_eq!(acc_2_balance, 20100);
+
+    info!("Successfully transferred using to_label");
+
+    Ok(())
+}

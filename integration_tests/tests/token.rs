@@ -1,3 +1,9 @@
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "We don't care about these in tests"
+)]
+
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -8,6 +14,7 @@ use integration_tests::{
 use key_protocol::key_management::key_tree::chain_index::ChainIndex;
 use log::info;
 use nssa::program::Program;
+use sequencer_service_rpc::RpcClient as _;
 use token_core::{TokenDefinition, TokenHolding};
 use tokio::test;
 use wallet::cli::{
@@ -88,8 +95,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(definition_acc.program_owner, Program::token().id());
@@ -106,8 +112,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
 
     // The account must be owned by the token program
     assert_eq!(supply_acc.program_owner, Program::token().id());
@@ -141,8 +146,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
     assert_eq!(supply_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
     assert_eq!(
@@ -157,8 +161,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     assert_eq!(recipient_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
     assert_eq!(
@@ -188,8 +191,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -205,8 +207,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -238,8 +239,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -255,8 +255,7 @@ async fn create_and_transfer_public_token() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -345,8 +344,7 @@ async fn create_and_transfer_token_with_private_supply() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(definition_acc.program_owner, Program::token().id());
@@ -413,8 +411,7 @@ async fn create_and_transfer_token_with_private_supply() -> Result<()> {
     let definition_acc = ctx
         .sequencer_client()
         .get_account(definition_account_id)
-        .await?
-        .account;
+        .await?;
     let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
 
     assert_eq!(
@@ -516,8 +513,7 @@ async fn create_token_with_private_definition() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
 
     assert_eq!(supply_acc.program_owner, Program::token().id());
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
@@ -598,8 +594,7 @@ async fn create_token_with_private_definition() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id_public)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
 
     assert_eq!(
@@ -904,8 +899,7 @@ async fn shielded_token_transfer() -> Result<()> {
     let supply_acc = ctx
         .sequencer_client()
         .get_account(supply_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&supply_acc.data)?;
     assert_eq!(
         token_holding,
@@ -1052,8 +1046,7 @@ async fn deshielded_token_transfer() -> Result<()> {
     let recipient_acc = ctx
         .sequencer_client()
         .get_account(recipient_account_id)
-        .await?
-        .account;
+        .await?;
     let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
     assert_eq!(
         token_holding,
@@ -1189,6 +1182,196 @@ async fn token_claiming_path_with_private_accounts() -> Result<()> {
     );
 
     info!("Successfully minted tokens using claiming path");
+
+    Ok(())
+}
+
+#[test]
+async fn create_token_using_labels() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Create definition and supply accounts with labels
+    let def_label = "token-definition-label".to_owned();
+    let supply_label = "token-supply-label".to_owned();
+
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(def_label.clone()),
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: definition_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(supply_label.clone()),
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: supply_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create token using account labels instead of IDs
+    let name = "LABELED TOKEN".to_string();
+    let total_supply = 100;
+    let subcommand = TokenProgramAgnosticSubcommand::New {
+        definition_account_id: None,
+        definition_account_label: Some(def_label),
+        supply_account_id: None,
+        supply_account_label: Some(supply_label),
+        name: name.clone(),
+        total_supply,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let definition_acc = ctx
+        .sequencer_client()
+        .get_account(definition_account_id)
+        .await?;
+    let token_definition = TokenDefinition::try_from(&definition_acc.data)?;
+
+    assert_eq!(definition_acc.program_owner, Program::token().id());
+    assert_eq!(
+        token_definition,
+        TokenDefinition::Fungible {
+            name,
+            total_supply,
+            metadata_id: None
+        }
+    );
+
+    let supply_acc = ctx
+        .sequencer_client()
+        .get_account(supply_account_id)
+        .await?;
+    let token_holding = TokenHolding::try_from(&supply_acc.data)?;
+    assert_eq!(
+        token_holding,
+        TokenHolding::Fungible {
+            definition_id: definition_account_id,
+            balance: total_supply
+        }
+    );
+
+    info!("Successfully created token using definition and supply account labels");
+
+    Ok(())
+}
+
+#[test]
+async fn transfer_token_using_from_label() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Create definition account
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: definition_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create supply account with a label
+    let supply_label = "token-supply-sender".to_owned();
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(supply_label.clone()),
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: supply_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create recipient account
+    let result = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?;
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: recipient_account_id,
+    } = result
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create token
+    let total_supply = 50;
+    let subcommand = TokenProgramAgnosticSubcommand::New {
+        definition_account_id: Some(format_public_account_id(definition_account_id)),
+        definition_account_label: None,
+        supply_account_id: Some(format_public_account_id(supply_account_id)),
+        supply_account_label: None,
+        name: "LABEL TEST TOKEN".to_string(),
+        total_supply,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    // Transfer token using from_label instead of from
+    let transfer_amount = 20;
+    let subcommand = TokenProgramAgnosticSubcommand::Send {
+        from: None,
+        from_label: Some(supply_label),
+        to: Some(format_public_account_id(recipient_account_id)),
+        to_label: None,
+        to_npk: None,
+        to_vpk: None,
+        amount: transfer_amount,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let recipient_acc = ctx
+        .sequencer_client()
+        .get_account(recipient_account_id)
+        .await?;
+    let token_holding = TokenHolding::try_from(&recipient_acc.data)?;
+    assert_eq!(
+        token_holding,
+        TokenHolding::Fungible {
+            definition_id: definition_account_id,
+            balance: transfer_amount
+        }
+    );
+
+    info!("Successfully transferred token using from_label");
 
     Ok(())
 }

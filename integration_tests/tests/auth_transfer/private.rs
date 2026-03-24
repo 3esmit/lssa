@@ -8,6 +8,7 @@ use integration_tests::{
 use log::info;
 use nssa::{AccountId, program::Program};
 use nssa_core::{NullifierPublicKey, encryption::shared_key_derivation::Secp256k1Point};
+use sequencer_service_rpc::RpcClient as _;
 use tokio::test;
 use wallet::cli::{
     Command, SubcommandReturnValue,
@@ -141,7 +142,7 @@ async fn deshielded_transfer_to_public_account() -> Result<()> {
     let acc_2_balance = ctx.sequencer_client().get_account_balance(to).await?;
 
     assert_eq!(from_acc.balance, 9900);
-    assert_eq!(acc_2_balance.balance, 20100);
+    assert_eq!(acc_2_balance, 20100);
 
     info!("Successfully deshielded transfer to public account");
 
@@ -255,7 +256,7 @@ async fn shielded_transfer_to_owned_private_account() -> Result<()> {
 
     let acc_from_balance = ctx.sequencer_client().get_account_balance(from).await?;
 
-    assert_eq!(acc_from_balance.balance, 9900);
+    assert_eq!(acc_from_balance, 9900);
     assert_eq!(acc_to.balance, 20100);
 
     info!("Successfully shielded transfer to owned private account");
@@ -302,7 +303,7 @@ async fn shielded_transfer_to_foreign_account() -> Result<()> {
         .await
     );
 
-    assert_eq!(acc_1_balance.balance, 9900);
+    assert_eq!(acc_1_balance, 9900);
 
     info!("Successfully shielded transfer to foreign account");
 
@@ -426,6 +427,103 @@ async fn initialize_private_account() -> Result<()> {
     assert!(account.data.is_empty());
 
     info!("Successfully initialized private account");
+
+    Ok(())
+}
+
+#[test]
+async fn private_transfer_using_from_label() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    let from: AccountId = ctx.existing_private_accounts()[0];
+    let to: AccountId = ctx.existing_private_accounts()[1];
+
+    // Assign a label to the sender account
+    let label = "private-sender-label".to_owned();
+    let command = Command::Account(AccountSubcommand::Label {
+        account_id: Some(format_private_account_id(from)),
+        account_label: None,
+        label: label.clone(),
+    });
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    // Send using the label instead of account ID
+    let command = Command::AuthTransfer(AuthTransferSubcommand::Send {
+        from: None,
+        from_label: Some(label),
+        to: Some(format_private_account_id(to)),
+        to_label: None,
+        to_npk: None,
+        to_vpk: None,
+        amount: 100,
+    });
+
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    info!("Waiting for next block creation");
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let new_commitment1 = ctx
+        .wallet()
+        .get_private_account_commitment(from)
+        .context("Failed to get private account commitment for sender")?;
+    assert!(verify_commitment_is_in_state(new_commitment1, ctx.sequencer_client()).await);
+
+    let new_commitment2 = ctx
+        .wallet()
+        .get_private_account_commitment(to)
+        .context("Failed to get private account commitment for receiver")?;
+    assert!(verify_commitment_is_in_state(new_commitment2, ctx.sequencer_client()).await);
+
+    info!("Successfully transferred privately using from_label");
+
+    Ok(())
+}
+
+#[test]
+async fn initialize_private_account_using_label() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Create a new private account with a label
+    let label = "init-private-label".to_owned();
+    let command = Command::Account(AccountSubcommand::New(NewSubcommand::Private {
+        cci: None,
+        label: Some(label.clone()),
+    }));
+    let result = wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+    let SubcommandReturnValue::RegisterAccount { account_id } = result else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Initialize using the label instead of account ID
+    let command = Command::AuthTransfer(AuthTransferSubcommand::Init {
+        account_id: None,
+        account_label: Some(label),
+    });
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let command = Command::Account(AccountSubcommand::SyncPrivate {});
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
+
+    let new_commitment = ctx
+        .wallet()
+        .get_private_account_commitment(account_id)
+        .context("Failed to get private account commitment")?;
+    assert!(verify_commitment_is_in_state(new_commitment, ctx.sequencer_client()).await);
+
+    let account = ctx
+        .wallet()
+        .get_account_private(account_id)
+        .context("Failed to get private account")?;
+
+    assert_eq!(
+        account.program_owner,
+        Program::authenticated_transfer_program().id()
+    );
+
+    info!("Successfully initialized private account using label");
 
     Ok(())
 }

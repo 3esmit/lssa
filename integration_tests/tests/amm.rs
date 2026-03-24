@@ -420,3 +420,188 @@ async fn amm_public() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+async fn amm_new_pool_using_labels() -> Result<()> {
+    let mut ctx = TestContext::new().await?;
+
+    // Create token 1 accounts
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: definition_account_id_1,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: supply_account_id_1,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create holding_a with a label
+    let holding_a_label = "amm-holding-a-label".to_owned();
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: holding_a_id,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(holding_a_label.clone()),
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create token 2 accounts
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: definition_account_id_2,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: supply_account_id_2,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: None,
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create holding_b with a label
+    let holding_b_label = "amm-holding-b-label".to_owned();
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: holding_b_id,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(holding_b_label.clone()),
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create holding_lp with a label
+    let holding_lp_label = "amm-holding-lp-label".to_owned();
+    let SubcommandReturnValue::RegisterAccount {
+        account_id: holding_lp_id,
+    } = wallet::cli::execute_subcommand(
+        ctx.wallet_mut(),
+        Command::Account(AccountSubcommand::New(NewSubcommand::Public {
+            cci: None,
+            label: Some(holding_lp_label.clone()),
+        })),
+    )
+    .await?
+    else {
+        anyhow::bail!("Expected RegisterAccount return value");
+    };
+
+    // Create token 1 and distribute to holding_a
+    let subcommand = TokenProgramAgnosticSubcommand::New {
+        definition_account_id: Some(format_public_account_id(definition_account_id_1)),
+        definition_account_label: None,
+        supply_account_id: Some(format_public_account_id(supply_account_id_1)),
+        supply_account_label: None,
+        name: "TOKEN1".to_string(),
+        total_supply: 10,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let subcommand = TokenProgramAgnosticSubcommand::Send {
+        from: Some(format_public_account_id(supply_account_id_1)),
+        from_label: None,
+        to: Some(format_public_account_id(holding_a_id)),
+        to_label: None,
+        to_npk: None,
+        to_vpk: None,
+        amount: 5,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    // Create token 2 and distribute to holding_b
+    let subcommand = TokenProgramAgnosticSubcommand::New {
+        definition_account_id: Some(format_public_account_id(definition_account_id_2)),
+        definition_account_label: None,
+        supply_account_id: Some(format_public_account_id(supply_account_id_2)),
+        supply_account_label: None,
+        name: "TOKEN2".to_string(),
+        total_supply: 10,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let subcommand = TokenProgramAgnosticSubcommand::Send {
+        from: Some(format_public_account_id(supply_account_id_2)),
+        from_label: None,
+        to: Some(format_public_account_id(holding_b_id)),
+        to_label: None,
+        to_npk: None,
+        to_vpk: None,
+        amount: 5,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::Token(subcommand)).await?;
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    // Create AMM pool using account labels instead of IDs
+    let subcommand = AmmProgramAgnosticSubcommand::New {
+        user_holding_a: None,
+        user_holding_a_label: Some(holding_a_label),
+        user_holding_b: None,
+        user_holding_b_label: Some(holding_b_label),
+        user_holding_lp: None,
+        user_holding_lp_label: Some(holding_lp_label),
+        balance_a: 3,
+        balance_b: 3,
+    };
+    wallet::cli::execute_subcommand(ctx.wallet_mut(), Command::AMM(subcommand)).await?;
+    tokio::time::sleep(Duration::from_secs(TIME_TO_WAIT_FOR_BLOCK_SECONDS)).await;
+
+    let holding_lp_acc = ctx.sequencer_client().get_account(holding_lp_id).await?;
+
+    // LP balance should be 3 (geometric mean of 3, 3)
+    assert_eq!(
+        u128::from_le_bytes(holding_lp_acc.data[33..].try_into().unwrap()),
+        3
+    );
+
+    info!("Successfully created AMM pool using account labels");
+
+    Ok(())
+}

@@ -142,7 +142,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
         (sequencer_core, mempool_handle)
     }
 
-    fn next_block_timestamp_ms(&self) -> nssa_core::program::Timestamp {
+    fn next_block_timestamp_ms() -> nssa_core::program::Timestamp {
         u64::try_from(chrono::Utc::now().timestamp_millis()).expect("Timestamp must be positive")
     }
 
@@ -151,7 +151,7 @@ impl<BC: BlockSettlementClientTrait, IC: IndexerClientTrait> SequencerCore<BC, I
         tx: NSSATransaction,
     ) -> Result<NSSATransaction, nssa::error::NssaError> {
         let block_id = self.next_block_id();
-        let timestamp_ms = self.next_block_timestamp_ms();
+        let timestamp_ms = Self::next_block_timestamp_ms();
         match &tx {
             NSSATransaction::Public(tx) => {
                 self.state

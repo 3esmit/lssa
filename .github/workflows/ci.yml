@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - main
+      - Pravdyvyi/ci-test-2
     paths-ignore:
       - "**.md"
       - "!.github/workflows/*.yml"

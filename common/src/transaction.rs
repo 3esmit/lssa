@@ -4,6 +4,7 @@ use nssa::{AccountId, V03State};
 use serde::{Deserialize, Serialize};
 
 use crate::{HashType, block::BlockId};
+use nssa_core::program::Timestamp;
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum NSSATransaction {
@@ -69,11 +70,14 @@ impl NSSATransaction {
         self,
         state: &mut V03State,
         block_id: BlockId,
+        timestamp_ms: Timestamp,
     ) -> Result<Self, nssa::error::NssaError> {
         match &self {
-            Self::Public(tx) => state.transition_from_public_transaction(tx, block_id),
+            Self::Public(tx) => {
+                state.transition_from_public_transaction(tx, block_id, timestamp_ms)
+            }
             Self::PrivacyPreserving(tx) => {
-                state.transition_from_privacy_preserving_transaction(tx, block_id)
+                state.transition_from_privacy_preserving_transaction(tx, block_id, timestamp_ms)
             }
             Self::ProgramDeployment(tx) => state.transition_from_program_deployment_transaction(tx),
         }

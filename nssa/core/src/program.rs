@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-#[cfg(feature = "host")]
+#[cfg(any(feature = "host", test))]
 use borsh::{BorshDeserialize, BorshSerialize};
 use risc0_zkvm::{DeserializeOwned, guest::env, serde::Deserializer};
 use serde::{Deserialize, Serialize};
@@ -154,6 +154,8 @@ impl AccountPostState {
 }
 
 pub type BlockId = u64;
+/// Unix timestamp in milliseconds.
+pub type Timestamp = u64;
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[cfg_attr(
@@ -163,6 +165,8 @@ pub type BlockId = u64;
 pub struct ValidityWindow {
     from: Option<BlockId>,
     to: Option<BlockId>,
+    from_timestamp: Option<Timestamp>,
+    to_timestamp: Option<Timestamp>,
 }
 
 impl ValidityWindow {
@@ -171,10 +175,22 @@ impl ValidityWindow {
         Self {
             from: None,
             to: None,
+            from_timestamp: None,
+            to_timestamp: None,
         }
     }
 
+    /// Valid for block IDs in the range [from, to) and timestamps in [from_timestamp, to_timestamp).
+    #[must_use]
+    pub fn is_valid_for(&self, block_id: BlockId, timestamp_ms: Timestamp) -> bool {
+        self.from.is_none_or(|start| block_id >= start)
+            && self.to.is_none_or(|end| block_id < end)
+            && self.from_timestamp.is_none_or(|t| timestamp_ms >= t)
+            && self.to_timestamp.is_none_or(|t| timestamp_ms < t)
+    }
+
     /// Valid for block IDs in the range [from, to), where `from` is included and `to` is excluded.
+    /// Ignores timestamp bounds.
     #[must_use]
     pub fn is_valid_for_block_id(&self, id: BlockId) -> bool {
         self.from.is_none_or(|start| id >= start) && self.to.is_none_or(|end| id < end)
@@ -184,10 +200,14 @@ impl ValidityWindow {
         if let (Some(from_id), Some(until_id)) = (self.from, self.to)
             && from_id >= until_id
         {
-            Err(InvalidWindow)
-        } else {
-            Ok(())
+            return Err(InvalidWindow);
         }
+        if let (Some(from_ts), Some(until_ts)) = (self.from_timestamp, self.to_timestamp)
+            && from_ts >= until_ts
+        {
+            return Err(InvalidWindow);
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -199,7 +219,18 @@ impl ValidityWindow {
     pub const fn to(&self) -> Option<BlockId> {
         self.to
     }
+
+    #[must_use]
+    pub const fn from_timestamp(&self) -> Option<Timestamp> {
+        self.from_timestamp
+    }
+
+    #[must_use]
+    pub const fn to_timestamp(&self) -> Option<Timestamp> {
+        self.to_timestamp
+    }
 }
+
 impl TryFrom<(Option<BlockId>, Option<BlockId>)> for ValidityWindow {
     type Error = InvalidWindow;
 
@@ -207,6 +238,37 @@ impl TryFrom<(Option<BlockId>, Option<BlockId>)> for ValidityWindow {
         let this = Self {
             from: value.0,
             to: value.1,
+            from_timestamp: None,
+            to_timestamp: None,
+        };
+        this.check_window()?;
+        Ok(this)
+    }
+}
+
+impl
+    TryFrom<(
+        Option<BlockId>,
+        Option<BlockId>,
+        Option<Timestamp>,
+        Option<Timestamp>,
+    )> for ValidityWindow
+{
+    type Error = InvalidWindow;
+
+    fn try_from(
+        value: (
+            Option<BlockId>,
+            Option<BlockId>,
+            Option<Timestamp>,
+            Option<Timestamp>,
+        ),
+    ) -> Result<Self, Self::Error> {
+        let this = Self {
+            from: value.0,
+            to: value.1,
+            from_timestamp: value.2,
+            to_timestamp: value.3,
         };
         this.check_window()?;
         Ok(this)
@@ -268,6 +330,18 @@ impl ProgramOutput {
 
     pub fn valid_until_id(mut self, id: Option<BlockId>) -> Result<Self, InvalidWindow> {
         self.validity_window.to = id;
+        self.validity_window.check_window()?;
+        Ok(self)
+    }
+
+    pub fn valid_from_timestamp(mut self, ts: Option<Timestamp>) -> Result<Self, InvalidWindow> {
+        self.validity_window.from_timestamp = ts;
+        self.validity_window.check_window()?;
+        Ok(self)
+    }
+
+    pub fn valid_until_timestamp(mut self, ts: Option<Timestamp>) -> Result<Self, InvalidWindow> {
+        self.validity_window.to_timestamp = ts;
         self.validity_window.check_window()?;
         Ok(self)
     }

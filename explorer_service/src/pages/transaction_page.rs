@@ -183,11 +183,24 @@ pub fn TransactionPage() -> impl IntoView {
                                         signatures_and_public_keys: _,
                                         proof,
                                     } = witness_set;
-                                    let validity_window_formatted = match validity_window.0 {
-                                        (Some(start), Some(end)) => format!("from {start} to {end}"),
-                                        (Some(start), None) => format!("from {start}"),
-                                        (None, Some(end)) => format!("until {end}"),
-                                        (None, None) => "unbounded".to_owned(),
+                                    let (block_from, block_to, ts_from, ts_to) = validity_window.0;
+                                    let block_part = match (block_from, block_to) {
+                                        (Some(start), Some(end)) => format!("block {start}..{end}"),
+                                        (Some(start), None) => format!("block {start}.."),
+                                        (None, Some(end)) => format!("block ..{end}"),
+                                        (None, None) => String::new(),
+                                    };
+                                    let ts_part = match (ts_from, ts_to) {
+                                        (Some(start), Some(end)) => format!("ts {start}..{end}"),
+                                        (Some(start), None) => format!("ts {start}.."),
+                                        (None, Some(end)) => format!("ts ..{end}"),
+                                        (None, None) => String::new(),
+                                    };
+                                    let validity_window_formatted = match (block_part.is_empty(), ts_part.is_empty()) {
+                                        (true, true) => "unbounded".to_owned(),
+                                        (false, true) => block_part,
+                                        (true, false) => ts_part,
+                                        (false, false) => format!("{block_part}, {ts_part}"),
                                     };
 
                                     let proof_len = proof.map_or(0, |p| p.0.len());

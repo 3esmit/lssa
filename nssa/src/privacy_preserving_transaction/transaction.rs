@@ -7,7 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use nssa_core::{
     Commitment, CommitmentSetDigest, Nullifier, PrivacyPreservingCircuitOutput,
     account::{Account, AccountWithMetadata},
-    program::{BlockId, ValidityWindow},
+    program::{BlockId, Timestamp, ValidityWindow},
 };
 use sha2::{Digest as _, digest::FixedOutput as _};
 
@@ -37,6 +37,7 @@ impl PrivacyPreservingTransaction {
         &self,
         state: &V03State,
         block_id: BlockId,
+        timestamp_ms: Timestamp,
     ) -> Result<HashMap<AccountId, Account>, NssaError> {
         let message = &self.message;
         let witness_set = &self.witness_set;
@@ -94,7 +95,7 @@ impl PrivacyPreservingTransaction {
         }
 
         // Verify validity window
-        if !message.validity_window.is_valid_for_block_id(block_id) {
+        if !message.validity_window.is_valid_for(block_id, timestamp_ms) {
             return Err(NssaError::OutOfValidityWindow);
         }
 

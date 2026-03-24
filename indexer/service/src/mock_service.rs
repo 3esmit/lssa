@@ -124,7 +124,7 @@ impl MockIndexerService {
                                 indexer_service_protocol::Nullifier([tx_idx as u8; 32]),
                                 CommitmentSetDigest([0xff; 32]),
                             )],
-                            validity_window: ValidityWindow((None, None)),
+                            validity_window: ValidityWindow((None, None, None, None)),
                         },
                         witness_set: WitnessSet {
                             signatures_and_public_keys: vec![],

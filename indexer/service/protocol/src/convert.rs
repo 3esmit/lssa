@@ -302,7 +302,12 @@ impl From<nssa::privacy_preserving_transaction::message::Message> for PrivacyPre
                 .into_iter()
                 .map(|(n, d)| (n.into(), d.into()))
                 .collect(),
-            validity_window: ValidityWindow((validity_window.from(), validity_window.to())),
+            validity_window: ValidityWindow((
+                validity_window.from(),
+                validity_window.to(),
+                validity_window.from_timestamp(),
+                validity_window.to_timestamp(),
+            )),
         }
     }
 }

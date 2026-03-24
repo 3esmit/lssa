@@ -302,7 +302,9 @@ pub struct Nullifier(
 );
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-pub struct ValidityWindow(pub (Option<BlockId>, Option<BlockId>));
+pub struct ValidityWindow(
+    pub (Option<BlockId>, Option<BlockId>, Option<TimeStamp>, Option<TimeStamp>),
+);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct CommitmentSetDigest(

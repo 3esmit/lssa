@@ -19,15 +19,12 @@ fn main() {
 
     let post = pre.account.clone();
 
-    let output = ProgramOutput::new(
+    ProgramOutput::new(
         instruction_words,
         vec![pre],
         vec![AccountPostState::new(post)],
     )
-    .valid_from_id(from_id)
+    .try_with_validity_window((from_id, until_id))
     .unwrap()
-    .valid_until_id(until_id)
-    .unwrap();
-
-    output.write();
+    .write();
 }

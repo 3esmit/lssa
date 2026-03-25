@@ -44,9 +44,7 @@ fn main() {
         vec![pre],
         vec![AccountPostState::new(post)],
     )
-    .valid_from_id(from_id)
-    .unwrap()
-    .valid_until_id(until_id)
+    .try_with_validity_window((from_id, until_id))
     .unwrap()
     .with_chained_calls(vec![chained_call])
     .write();

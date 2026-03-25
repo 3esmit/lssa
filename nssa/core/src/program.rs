@@ -323,6 +323,23 @@ impl ProgramOutput {
         self.validity_window.set_to(id)?;
         Ok(self)
     }
+
+    /// Sets the validity window from an infallible range conversion (`1..`, `..5`, `..`).
+    #[must_use]
+    pub fn with_validity_window<W: Into<ValidityWindow>>(mut self, window: W) -> Self {
+        self.validity_window = window.into();
+        self
+    }
+
+    /// Sets the validity window from a fallible range conversion (`1..5`).
+    /// Returns `Err` if the range is empty.
+    pub fn try_with_validity_window<W: TryInto<ValidityWindow, Error = InvalidWindow>>(
+        mut self,
+        window: W,
+    ) -> Result<Self, InvalidWindow> {
+        self.validity_window = window.try_into()?;
+        Ok(self)
+    }
 }
 
 /// Representation of a number as `lo + hi * 2^128`.
@@ -569,6 +586,35 @@ mod tests {
         let w: ValidityWindow = (..).into();
         assert_eq!(w.from(), None);
         assert_eq!(w.to(), None);
+    }
+
+    #[test]
+    fn program_output_try_with_validity_window_range() {
+        let output = ProgramOutput::new(vec![], vec![], vec![])
+            .try_with_validity_window(10_u64..100)
+            .unwrap();
+        assert_eq!(output.validity_window.from(), Some(10));
+        assert_eq!(output.validity_window.to(), Some(100));
+    }
+
+    #[test]
+    fn program_output_with_validity_window_range_from() {
+        let output = ProgramOutput::new(vec![], vec![], vec![]).with_validity_window(10_u64..);
+        assert_eq!(output.validity_window.from(), Some(10));
+        assert_eq!(output.validity_window.to(), None);
+    }
+
+    #[test]
+    fn program_output_with_validity_window_range_to() {
+        let output = ProgramOutput::new(vec![], vec![], vec![]).with_validity_window(..100_u64);
+        assert_eq!(output.validity_window.from(), None);
+        assert_eq!(output.validity_window.to(), Some(100));
+    }
+
+    #[test]
+    fn program_output_try_with_validity_window_empty_range_fails() {
+        let result = ProgramOutput::new(vec![], vec![], vec![]).try_with_validity_window(5_u64..5);
+        assert!(result.is_err());
     }
 
     #[test]

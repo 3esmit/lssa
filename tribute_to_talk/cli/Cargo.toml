@@ -1,0 +1,26 @@
+[package]
+name = "tribute_to_talk_cli"
+version = "0.1.0"
+edition = "2024"
+license = { workspace = true }
+
+[dependencies]
+tribute_to_talk_core.workspace = true
+tribute_to_talk_methods.workspace = true
+nssa.workspace = true
+nssa_core.workspace = true
+common.workspace = true
+wallet.workspace = true
+key_protocol.workspace = true
+sequencer_service_rpc.workspace = true
+
+anyhow.workspace = true
+borsh.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+clap.workspace = true
+hex.workspace = true
+risc0-zkvm.workspace = true
+base64.workspace = true

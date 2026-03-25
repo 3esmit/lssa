@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["core", "cli", "methods", "methods/guest"]
+
+[workspace.package]
+license = "MIT or Apache-2.0"
+
+[workspace.dependencies]
+tribute_to_talk_core = { path = "core" }
+tribute_to_talk_methods = { path = "methods" }
+
+nssa = { path = "../nssa" }
+nssa_core = { path = "../nssa/core", features = ["host"] }
+common = { path = "../common" }
+wallet = { path = "../wallet" }
+key_protocol = { path = "../key_protocol" }
+sequencer_service_rpc = { path = "../sequencer/service/rpc", features = ["client"] }
+
+risc0-zkvm = { version = "3.0.5", features = ["std"] }
+risc0-build = "3.0.5"
+anyhow = "1.0.98"
+borsh = "1.5.7"
+serde = { version = "1.0.60", default-features = false, features = ["derive"] }
+serde_json = "1.0.81"
+thiserror = "2.0"
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread", "fs"] }
+clap = { version = "4.5.42", features = ["derive"] }
+bech32 = "0.11.0"
+base64 = "0.22.1"
+hex = "0.4.3"

@@ -1,0 +1,15 @@
+[package]
+name = "tribute_to_talk_core"
+version = "0.1.0"
+edition = "2024"
+license = { workspace = true }
+
+[dependencies]
+nssa_core.workspace = true
+
+borsh.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+bech32.workspace = true
+base64.workspace = true
+serde_json.workspace = true

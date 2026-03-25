@@ -1,0 +1,13 @@
+[package]
+name = "tribute_to_talk_programs"
+version = "0.1.0"
+edition = "2024"
+license = { workspace = true }
+
+[dependencies]
+tribute_to_talk_core.workspace = true
+nssa_core = { path = "../../../nssa/core" }
+
+borsh.workspace = true
+serde.workspace = true
+risc0-zkvm.workspace = true

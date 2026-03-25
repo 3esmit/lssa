@@ -16,11 +16,14 @@ pub fn read_fungible_holding(account: &AccountWithMetadata, context: &str) -> (A
 }
 
 pub fn read_vault_fungible_balances(
+    context: &str,
     vault_a: &AccountWithMetadata,
     vault_b: &AccountWithMetadata,
 ) -> (u128, u128) {
-    let (_, vault_a_balance) = read_fungible_holding(vault_a, "Vault A");
-    let (_, vault_b_balance) = read_fungible_holding(vault_b, "Vault B");
+    let vault_a_context = format!("{context}: Vault A");
+    let vault_b_context = format!("{context}: Vault B");
+    let (_, vault_a_balance) = read_fungible_holding(vault_a, &vault_a_context);
+    let (_, vault_b_balance) = read_fungible_holding(vault_b, &vault_b_context);
 
     (vault_a_balance, vault_b_balance)
 }

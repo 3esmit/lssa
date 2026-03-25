@@ -47,7 +47,8 @@ pub fn add_liquidity(
     );
 
     // 2. Determine deposit amount
-    let (vault_a_balance, vault_b_balance) = read_vault_fungible_balances(&vault_a, &vault_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Add liquidity", &vault_a, &vault_b);
 
     assert!(pool_def_data.reserve_a != 0, "Reserves must be nonzero");
     assert!(pool_def_data.reserve_b != 0, "Reserves must be nonzero");

@@ -7,6 +7,10 @@ use nssa_core::{
 };
 use serde::{Deserialize, Serialize};
 
+// These separators are part of the PDA derivation scheme and must stay stable for compatibility.
+const LIQUIDITY_TOKEN_PDA_DOMAIN_SEPARATOR: [u8; 32] = [0; 32];
+const LP_LOCK_HOLDING_PDA_DOMAIN_SEPARATOR: [u8; 32] = [1; 32];
+
 /// AMM Program Instruction.
 #[derive(Serialize, Deserialize)]
 pub enum Instruction {
@@ -90,6 +94,9 @@ pub enum Instruction {
     /// - Vault Holding Account for Token B (initialized)
     /// - Recipient Holding Account for Token A (initialized)
     /// - Recipient Holding Account for Token B (initialized)
+    ///
+    /// This transfers only balances above the tracked reserves, so pool reserves remain
+    /// unchanged and no follow-up `SyncReserves` call is required.
     RecoverSurplus { mode: RecoverSurplusMode },
 }
 
@@ -217,7 +224,7 @@ pub fn compute_liquidity_token_pda_seed(pool_id: AccountId) -> PdaSeed {
 
     let mut bytes = [0; 64];
     bytes[0..32].copy_from_slice(&pool_id.to_bytes());
-    bytes[32..].copy_from_slice(&[0; 32]);
+    bytes[32..].copy_from_slice(&LIQUIDITY_TOKEN_PDA_DOMAIN_SEPARATOR);
 
     PdaSeed::new(
         Impl::hash_bytes(&bytes)
@@ -236,7 +243,7 @@ pub fn compute_lp_lock_holding_pda_seed(pool_id: AccountId) -> PdaSeed {
 
     let mut bytes = [0; 64];
     bytes[0..32].copy_from_slice(&pool_id.to_bytes());
-    bytes[32..].copy_from_slice(&[1; 32]);
+    bytes[32..].copy_from_slice(&LP_LOCK_HOLDING_PDA_DOMAIN_SEPARATOR);
 
     PdaSeed::new(
         Impl::hash_bytes(&bytes)

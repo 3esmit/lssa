@@ -74,7 +74,8 @@ pub fn recover_surplus(
         }
     }
 
-    let (vault_a_balance, vault_b_balance) = read_vault_fungible_balances(&vault_a, &vault_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Recover surplus", &vault_a, &vault_b);
     let surplus_a = vault_a_balance.saturating_sub(pool_def_data.reserve_a);
     let surplus_b = vault_b_balance.saturating_sub(pool_def_data.reserve_b);
 
@@ -116,6 +117,8 @@ pub fn recover_surplus(
         );
     }
 
+    // Surplus recovery only transfers balances above the tracked reserves, so the pool reserves
+    // remain unchanged and no follow-up sync is required.
     (
         vec![
             AccountPostState::new(pool.account.clone()),

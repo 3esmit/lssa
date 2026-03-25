@@ -9,6 +9,7 @@ use nssa_core::{
     account::{Account, AccountWithMetadata, Data},
     program::{AccountPostState, ChainedCall, ProgramId},
 };
+use token_core::TokenDefinition;
 
 #[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
 #[must_use]
@@ -150,9 +151,38 @@ pub fn new_definition(
     )
     .with_pda_seeds(vec![compute_liquidity_token_pda_seed(pool.account_id)]);
 
+    let mut pool_lp_after_lock = pool_lp_auth.clone();
+    if pool_definition_lp.account == Account::default() {
+        pool_lp_after_lock.account.program_owner = token_program_id;
+        pool_lp_after_lock.account.data = Data::from(&TokenDefinition::Fungible {
+            name: String::from("LP Token"),
+            total_supply: MINIMUM_LIQUIDITY,
+            metadata_id: None,
+        });
+    } else {
+        let token_definition = TokenDefinition::try_from(&pool_definition_lp.account.data)
+            .expect("New definition: AMM Program expects a valid LP Token Definition Account");
+        let TokenDefinition::Fungible {
+            name,
+            total_supply,
+            metadata_id,
+        } = token_definition
+        else {
+            panic!("New definition: LP Token Definition Account must be fungible");
+        };
+
+        pool_lp_after_lock.account.data = Data::from(&TokenDefinition::Fungible {
+            name,
+            total_supply: total_supply
+                .checked_add(MINIMUM_LIQUIDITY)
+                .expect("LP total supply overflow on lock mint"),
+            metadata_id,
+        });
+    }
+
     let call_token_lp_user = ChainedCall::new(
         token_program_id,
-        vec![pool_lp_auth.clone(), user_holding_lp.clone()],
+        vec![pool_lp_after_lock, user_holding_lp.clone()],
         &token_core::Instruction::Mint {
             amount_to_mint: user_lp,
         },

@@ -34,7 +34,8 @@ pub fn swap(
 
     // fetch pool reserves
     // validates reserves is at least the vaults' balances
-    let (vault_a_balance, vault_b_balance) = read_vault_fungible_balances(&vault_a, &vault_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Swap", &vault_a, &vault_b);
 
     assert!(
         vault_a_balance >= pool_def_data.reserve_a,

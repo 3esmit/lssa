@@ -391,12 +391,12 @@ impl ChainedCallForTests {
     }
 
     fn cc_new_definition_token_lp_user() -> ChainedCall {
-        let mut pool_lp_auth = AccountForTests::pool_lp_init();
-        pool_lp_auth.is_authorized = true;
-
         ChainedCall::new(
             TOKEN_PROGRAM_ID,
-            vec![pool_lp_auth, AccountForTests::user_holding_lp_uninit()],
+            vec![
+                AccountForTests::pool_lp_init_after_lock(),
+                AccountForTests::user_holding_lp_uninit(),
+            ],
             &token_core::Instruction::Mint {
                 amount_to_mint: BalanceForTests::lp_user_init(),
             },
@@ -639,9 +639,43 @@ impl AccountWithMetadataForTests {
         }
     }
 
+    fn pool_lp_init_after_lock() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("test"),
+                    total_supply: BalanceForTests::lp_supply_init() + MINIMUM_LIQUIDITY,
+                    metadata_id: None,
+                }),
+                nonce: 0_u128.into(),
+            },
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
     fn pool_lp_uninit() -> AccountWithMetadata {
         AccountWithMetadata {
             account: Account::default(),
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
+    fn pool_lp_created_after_lock() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("LP Token"),
+                    total_supply: MINIMUM_LIQUIDITY,
+                    metadata_id: None,
+                }),
+                nonce: 0_u128.into(),
+            },
             is_authorized: true,
             account_id: IdForTests::token_lp_definition_id(),
         }
@@ -2192,6 +2226,23 @@ fn call_remove_liquidity_insufficient_balance_1() {
     );
 }
 
+#[should_panic(expected = "Cannot remove more liquidity than owned")]
+#[test]
+fn test_call_remove_liquidity_amount_exceeds_user_balance() {
+    let _post_states = remove_liquidity(
+        AccountForTests::pool_definition_init(),
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_with_balance(BalanceForTests::remove_amount_lp_1()),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    );
+}
+
 #[should_panic(
     expected = "Insufficient minimal withdraw amount (Token B) provided for liquidity amount"
 )]
@@ -2690,7 +2741,10 @@ fn new_definition_lp_symmetric_amounts() {
 
     let expected_lp_user_call = ChainedCall::new(
         TOKEN_PROGRAM_ID,
-        vec![pool_lp_auth, AccountForTests::user_holding_lp_uninit()],
+        vec![
+            AccountForTests::pool_lp_init_after_lock(),
+            AccountForTests::user_holding_lp_uninit(),
+        ],
         &token_core::Instruction::Mint {
             amount_to_mint: expected_lp - MINIMUM_LIQUIDITY,
         },
@@ -2840,7 +2894,10 @@ fn test_minimum_liquidity_lock_and_remove_all_user_lp() {
     )]);
     let expected_user_call = ChainedCall::new(
         TOKEN_PROGRAM_ID,
-        vec![pool_lp_auth, AccountForTests::user_holding_lp_uninit()],
+        vec![
+            AccountForTests::pool_lp_created_after_lock(),
+            AccountForTests::user_holding_lp_uninit(),
+        ],
         &token_core::Instruction::Mint {
             amount_to_mint: user_lp,
         },

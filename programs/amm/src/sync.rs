@@ -24,10 +24,8 @@ pub fn sync_reserves(
         "Vault B was not provided"
     );
 
-    let (vault_a_balance, vault_b_balance) = read_vault_fungible_balances(&vault_a, &vault_b);
-
-    let _surplus_a = vault_a_balance.saturating_sub(pool_def_data.reserve_a);
-    let _surplus_b = vault_b_balance.saturating_sub(pool_def_data.reserve_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Sync reserves", &vault_a, &vault_b);
 
     let mut pool_post = pool.account.clone();
     let pool_post_definition = PoolDefinition {

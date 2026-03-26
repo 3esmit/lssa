@@ -268,8 +268,6 @@ pub struct ProgramOutput {
     /// The list of chained calls to other programs.
     pub chained_calls: Vec<ChainedCall>,
     /// The window where the program output is valid.
-    /// Valid for block IDs in the range [from, to), where `from` is included and `to` is excluded.
-    /// `None` means unbounded on that side.
     pub validity_window: ValidityWindow,
 }
 

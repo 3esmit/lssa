@@ -1522,7 +1522,6 @@ dependencies = [
  "log",
  "logos-blockchain-common-http-client",
  "nssa",
- "nssa_core",
  "serde",
  "serde_with",
  "sha2",
@@ -3460,6 +3459,7 @@ dependencies = [
  "serde_json",
  "storage",
  "tempfile",
+ "testnet_initial_state",
  "tokio",
  "url",
 ]
@@ -3587,6 +3587,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "testcontainers",
+ "testnet_initial_state",
  "token_core",
  "tokio",
  "url",
@@ -6940,7 +6941,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7158,7 +7159,6 @@ name = "sequencer_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base58",
  "bedrock_client",
  "borsh",
  "bytesize",
@@ -7178,6 +7178,7 @@ dependencies = [
  "serde_json",
  "storage",
  "tempfile",
+ "testnet_initial_state",
  "tokio",
  "url",
 ]
@@ -7892,6 +7893,17 @@ dependencies = [
  "tokio-util",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "testnet_initial_state"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "key_protocol",
+ "nssa",
+ "nssa_core",
+ "serde",
 ]
 
 [[package]]
@@ -8691,6 +8703,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "testnet_initial_state",
  "thiserror 2.0.18",
  "token_core",
  "tokio",

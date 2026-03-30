@@ -2198,6 +2198,40 @@ fn call_remove_liquidity_min_bal_zero_2() {
     );
 }
 
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn call_remove_liquidity_vault_a_balance_below_reserve() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    );
+}
+
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn call_remove_liquidity_vault_b_balance_below_reserve() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    );
+}
+
 #[test]
 fn call_remove_liquidity_chained_call_successful() {
     let (post_states, chained_calls) = remove_liquidity(
@@ -2227,6 +2261,109 @@ fn call_remove_liquidity_chained_call_successful() {
     assert!(chained_call_a == ChainedCallForTests::cc_remove_token_a());
     assert!(chained_call_b == ChainedCallForTests::cc_remove_token_b());
     assert!(chained_call_lp == ChainedCallForTests::cc_remove_pool_lp());
+}
+
+#[test]
+fn call_remove_liquidity_distributes_vault_surplus() {
+    let mut pool = AccountWithMetadataForTests::pool_definition_init();
+    pool.account.data = Data::from(&PoolDefinition {
+        definition_token_a_id: IdForTests::token_a_definition_id(),
+        definition_token_b_id: IdForTests::token_b_definition_id(),
+        vault_a_id: IdForTests::vault_a_id(),
+        vault_b_id: IdForTests::vault_b_id(),
+        liquidity_pool_id: IdForTests::token_lp_definition_id(),
+        liquidity_pool_supply: 4_000,
+        reserve_a: 4_000,
+        reserve_b: 2_000,
+        fees: 0_u128,
+        active: true,
+    });
+
+    let mut vault_a = AccountWithMetadataForTests::vault_a_init();
+    vault_a.account.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForTests::token_a_definition_id(),
+        balance: 4_400,
+    });
+
+    let mut vault_b = AccountWithMetadataForTests::vault_b_init();
+    vault_b.account.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForTests::token_b_definition_id(),
+        balance: 2_200,
+    });
+
+    let mut user_holding_lp = AccountWithMetadataForTests::user_holding_lp_init();
+    user_holding_lp.account.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForTests::token_lp_definition_id(),
+        balance: 1_000,
+    });
+
+    let (post_states, chained_calls) = remove_liquidity(
+        pool,
+        vault_a.clone(),
+        vault_b.clone(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        user_holding_lp.clone(),
+        NonZero::new(1_000).unwrap(),
+        1_100,
+        550,
+    );
+
+    let pool_post = PoolDefinition::try_from(&post_states[0].account().data).unwrap();
+    assert_eq!(pool_post.liquidity_pool_supply, 3_000);
+    assert_eq!(pool_post.reserve_a, 3_000);
+    assert_eq!(pool_post.reserve_b, 1_500);
+    assert!(pool_post.active);
+
+    let mut vault_a_auth = vault_a;
+    vault_a_auth.is_authorized = true;
+    let mut vault_b_auth = vault_b;
+    vault_b_auth.is_authorized = true;
+    let mut pool_lp_auth = AccountWithMetadataForTests::pool_lp_init();
+    pool_lp_auth.is_authorized = true;
+
+    assert_eq!(
+        chained_calls[2],
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_a_auth, AccountWithMetadataForTests::user_holding_a()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: 1_100,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )])
+    );
+    assert_eq!(
+        chained_calls[1],
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_b_auth, AccountWithMetadataForTests::user_holding_b()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: 550,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    );
+    assert_eq!(
+        chained_calls[0],
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![pool_lp_auth, user_holding_lp],
+            &token_core::Instruction::Burn {
+                amount_to_burn: 1_000,
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    );
 }
 
 #[should_panic(expected = "Balances must be nonzero")]
@@ -2758,6 +2895,147 @@ fn simple_amm_remove() {
     assert_eq!(user_token_a_post, expected_user_token_a);
     assert_eq!(user_token_b_post, expected_user_token_b);
     assert_eq!(user_token_lp_post, expected_user_token_lp);
+}
+
+#[test]
+fn simple_amm_remove_distributes_vault_surplus() {
+    let mut state = state_for_amm_tests();
+
+    let mut pool_definition = AccountsForExeTests::pool_definition_init();
+    pool_definition.data = Data::from(&PoolDefinition {
+        definition_token_a_id: IdForExeTests::token_a_definition_id(),
+        definition_token_b_id: IdForExeTests::token_b_definition_id(),
+        vault_a_id: IdForExeTests::vault_a_id(),
+        vault_b_id: IdForExeTests::vault_b_id(),
+        liquidity_pool_id: IdForExeTests::token_lp_definition_id(),
+        liquidity_pool_supply: 4_000,
+        reserve_a: 4_000,
+        reserve_b: 2_000,
+        fees: 0_u128,
+        active: true,
+    });
+    state.force_insert_account(IdForExeTests::pool_definition_id(), pool_definition);
+
+    let mut token_lp_definition = AccountsForExeTests::token_lp_definition_acc();
+    token_lp_definition.data = Data::from(&TokenDefinition::Fungible {
+        name: String::from("LP Token"),
+        total_supply: 4_000,
+        metadata_id: None,
+    });
+    state.force_insert_account(IdForExeTests::token_lp_definition_id(), token_lp_definition);
+
+    let mut vault_a = AccountsForExeTests::vault_a_init();
+    vault_a.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForExeTests::token_a_definition_id(),
+        balance: 4_400,
+    });
+    state.force_insert_account(IdForExeTests::vault_a_id(), vault_a);
+
+    let mut vault_b = AccountsForExeTests::vault_b_init();
+    vault_b.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForExeTests::token_b_definition_id(),
+        balance: 2_200,
+    });
+    state.force_insert_account(IdForExeTests::vault_b_id(), vault_b);
+
+    let instruction = amm_core::Instruction::RemoveLiquidity {
+        remove_liquidity_amount: 1_000,
+        min_amount_to_remove_token_a: 1_100,
+        min_amount_to_remove_token_b: 550,
+    };
+
+    let message = public_transaction::Message::try_new(
+        Program::amm().id(),
+        vec![
+            IdForExeTests::pool_definition_id(),
+            IdForExeTests::vault_a_id(),
+            IdForExeTests::vault_b_id(),
+            IdForExeTests::token_lp_definition_id(),
+            IdForExeTests::user_token_a_id(),
+            IdForExeTests::user_token_b_id(),
+            IdForExeTests::user_token_lp_id(),
+        ],
+        vec![0_u128.into()],
+        instruction,
+    )
+    .unwrap();
+
+    let witness_set = public_transaction::WitnessSet::for_message(
+        &message,
+        &[&PrivateKeysForTests::user_token_lp_key()],
+    );
+
+    let tx = PublicTransaction::new(message, witness_set);
+    state.transition_from_public_transaction(&tx, 1).unwrap();
+
+    let pool_post = state.get_account_by_id(IdForExeTests::pool_definition_id());
+    let vault_a_post = state.get_account_by_id(IdForExeTests::vault_a_id());
+    let vault_b_post = state.get_account_by_id(IdForExeTests::vault_b_id());
+    let token_lp_post = state.get_account_by_id(IdForExeTests::token_lp_definition_id());
+    let user_token_a_post = state.get_account_by_id(IdForExeTests::user_token_a_id());
+    let user_token_b_post = state.get_account_by_id(IdForExeTests::user_token_b_id());
+    let user_token_lp_post = state.get_account_by_id(IdForExeTests::user_token_lp_id());
+
+    let pool_def = PoolDefinition::try_from(&pool_post.data).unwrap();
+    assert_eq!(pool_def.liquidity_pool_supply, 3_000);
+    assert_eq!(pool_def.reserve_a, 3_000);
+    assert_eq!(pool_def.reserve_b, 1_500);
+    assert!(pool_def.active);
+
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: vault_a_balance,
+    } = TokenHolding::try_from(&vault_a_post.data).unwrap()
+    else {
+        panic!("expected fungible vault A");
+    };
+    assert_eq!(vault_a_balance, 3_300);
+
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: vault_b_balance,
+    } = TokenHolding::try_from(&vault_b_post.data).unwrap()
+    else {
+        panic!("expected fungible vault B");
+    };
+    assert_eq!(vault_b_balance, 1_650);
+
+    let TokenDefinition::Fungible {
+        name: _,
+        total_supply: lp_supply,
+        metadata_id: _,
+    } = TokenDefinition::try_from(&token_lp_post.data).unwrap()
+    else {
+        panic!("expected fungible LP definition");
+    };
+    assert_eq!(lp_supply, 3_000);
+
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: user_token_a_balance,
+    } = TokenHolding::try_from(&user_token_a_post.data).unwrap()
+    else {
+        panic!("expected fungible user token A");
+    };
+    assert_eq!(user_token_a_balance, 11_100);
+
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: user_token_b_balance,
+    } = TokenHolding::try_from(&user_token_b_post.data).unwrap()
+    else {
+        panic!("expected fungible user token B");
+    };
+    assert_eq!(user_token_b_balance, 10_550);
+
+    let TokenHolding::Fungible {
+        definition_id: _,
+        balance: user_token_lp_balance,
+    } = TokenHolding::try_from(&user_token_lp_post.data).unwrap()
+    else {
+        panic!("expected fungible user LP");
+    };
+    assert_eq!(user_token_lp_balance, 1_000);
 }
 
 #[test]

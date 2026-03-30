@@ -57,6 +57,39 @@ pub fn remove_liquidity(
         "Minimum withdraw amount must be nonzero"
     );
 
+    let vault_a_token_holding = token_core::TokenHolding::try_from(&vault_a.account.data)
+        .expect("Remove liquidity: AMM Program expects a valid Token Holding Account for Vault A");
+    let token_core::TokenHolding::Fungible {
+        definition_id: _,
+        balance: vault_a_balance,
+    } = vault_a_token_holding
+    else {
+        panic!(
+            "Remove liquidity: AMM Program expects a valid Fungible Token Holding Account for Vault A"
+        );
+    };
+
+    let vault_b_token_holding = token_core::TokenHolding::try_from(&vault_b.account.data)
+        .expect("Remove liquidity: AMM Program expects a valid Token Holding Account for Vault B");
+    let token_core::TokenHolding::Fungible {
+        definition_id: _,
+        balance: vault_b_balance,
+    } = vault_b_token_holding
+    else {
+        panic!(
+            "Remove liquidity: AMM Program expects a valid Fungible Token Holding Account for Vault B"
+        );
+    };
+
+    assert!(
+        vault_a_balance >= pool_def_data.reserve_a,
+        "Vaults' balances must be at least the reserve amounts"
+    );
+    assert!(
+        vault_b_balance >= pool_def_data.reserve_b,
+        "Vaults' balances must be at least the reserve amounts"
+    );
+
     // 2. Compute withdrawal amounts
     let user_holding_lp_data = token_core::TokenHolding::try_from(&user_holding_lp.account.data)
         .expect("Remove liquidity: AMM Program expects a valid Token Account for liquidity token");
@@ -80,10 +113,14 @@ pub fn remove_liquidity(
         "Invalid liquidity account provided"
     );
 
-    let withdraw_amount_a =
+    let reserve_withdraw_amount_a =
         (pool_def_data.reserve_a * remove_liquidity_amount) / pool_def_data.liquidity_pool_supply;
-    let withdraw_amount_b =
+    let reserve_withdraw_amount_b =
         (pool_def_data.reserve_b * remove_liquidity_amount) / pool_def_data.liquidity_pool_supply;
+    let withdraw_amount_a =
+        (vault_a_balance * remove_liquidity_amount) / pool_def_data.liquidity_pool_supply;
+    let withdraw_amount_b =
+        (vault_b_balance * remove_liquidity_amount) / pool_def_data.liquidity_pool_supply;
 
     // 3. Validate and slippage check
     assert!(
@@ -96,8 +133,7 @@ pub fn remove_liquidity(
     );
 
     // 4. Calculate LP to reduce cap by
-    let delta_lp: u128 = (pool_def_data.liquidity_pool_supply * remove_liquidity_amount)
-        / pool_def_data.liquidity_pool_supply;
+    let delta_lp = remove_liquidity_amount;
 
     let active: bool = pool_def_data.liquidity_pool_supply - delta_lp != 0;
 
@@ -105,8 +141,8 @@ pub fn remove_liquidity(
     let mut pool_post = pool.account;
     let pool_post_definition = PoolDefinition {
         liquidity_pool_supply: pool_def_data.liquidity_pool_supply - delta_lp,
-        reserve_a: pool_def_data.reserve_a - withdraw_amount_a,
-        reserve_b: pool_def_data.reserve_b - withdraw_amount_b,
+        reserve_a: pool_def_data.reserve_a - reserve_withdraw_amount_a,
+        reserve_b: pool_def_data.reserve_b - reserve_withdraw_amount_b,
         active,
         ..pool_def_data
     };
